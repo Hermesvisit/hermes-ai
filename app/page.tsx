@@ -5,8 +5,8 @@ import { useState } from "react";
 export default function Home() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [persona, setPersona] = useState("Normal");
-  const [mode, setMode] = useState("Fast");
+  const [persona, setPersona] = useState("Karışık Düşünme");
+  const [mode, setMode] = useState("Hibrit");
   const [messages, setMessages] = useState([
     { role: "ai", content: "Merhaba. Ben Hermes." },
   ]);
@@ -73,6 +73,7 @@ export default function Home() {
               onChange={(e) => setPersona(e.target.value)}
               className="bg-zinc-900 text-white border border-zinc-700 rounded-xl px-3 py-2 outline-none"
             >
+              <option value="Karışık Düşünme">Karışık Düşünme</option>
               <option value="Normal">Normal</option>
               <option value="CEO">CEO</option>
               <option value="Analist">Analist</option>
@@ -84,6 +85,7 @@ export default function Home() {
               onChange={(e) => setMode(e.target.value)}
               className="bg-zinc-900 text-white border border-zinc-700 rounded-xl px-3 py-2 outline-none"
             >
+              <option value="Hibrit">Hibrit</option>
               <option value="Fast">Fast</option>
               <option value="Deep">Deep</option>
               <option value="Research">Research</option>

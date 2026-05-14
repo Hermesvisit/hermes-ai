@@ -8,61 +8,115 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
+    const userMessage = body.message || "";
+    let persona = body.persona || "Normal";
+    let mode = body.mode || "Fast";
+
+    const lower = userMessage.toLowerCase();
+
+    if (persona === "Karışık Düşünme") {
+      if (
+        lower.includes("hata") ||
+        lower.includes("kod") ||
+        lower.includes("terminal") ||
+        lower.includes("tsx") ||
+        lower.includes("route")
+      ) {
+        persona = "CodeAgent";
+      } else if (
+        lower.includes("risk") ||
+        lower.includes("analiz") ||
+        lower.includes("karşılaştır") ||
+        lower.includes("mantıklı mı")
+      ) {
+        persona = "Analist";
+      } else if (
+        lower.includes("iş") ||
+        lower.includes("para") ||
+        lower.includes("girişim") ||
+        lower.includes("strateji") ||
+        lower.includes("plan")
+      ) {
+        persona = "CEO";
+      } else {
+        persona = "Normal";
+      }
+    }
+
+    if (mode === "Hibrit") {
+      if (
+        lower.includes("bugün") ||
+        lower.includes("güncel") ||
+        lower.includes("haber") ||
+        lower.includes("araştır") ||
+        lower.includes("son gelişme")
+      ) {
+        mode = "Research";
+      } else if (
+        lower.includes("karar") ||
+        lower.includes("risk") ||
+        lower.includes("strateji") ||
+        lower.includes("plan") ||
+        lower.includes("analiz")
+      ) {
+        mode = "Deep";
+      } else {
+        mode = "Fast";
+      }
+    }
+
     const personaPrompts: any = {
-      Normal: "Sen NeuroCore'sun. Türkçe, kısa, net ve pratik cevap ver.",
-      CEO: "Sen NeuroCore CEO Modusun. Stratejik, sonuç odaklı ve disiplinli cevap ver.",
-      Analist: "Sen NeuroCore Analist Modusun. Mantıklı, tarafsız ve riskleri gösteren cevaplar ver.",
+      Normal:
+        "Sen Hermes'sin. Türkçe, kısa, net ve pratik cevap ver.",
+      CEO:
+        "Sen Hermes CEO Modusun. Stratejik, sonuç odaklı, disiplinli ve net cevap ver. Kullanıcının zamanını, parasını ve enerjisini koru.",
+      Analist:
+        "Sen Hermes Analist Modusun. Mantıklı, tarafsız, artı-eksi ve risk odaklı analiz yap.",
       CodeAgent:
-        "Sen NeuroCore Code Agent'sın. Next.js, React ve TypeScript hatalarını analiz eder, hangi dosyada ne değişeceğini net söylersin.",
-      Research:
-        "Sen NeuroCore Research Agent'sın. Güncel gelişmeleri araştırır, özetler ve önemli noktaları aktarır.",
+        "Sen Hermes Code Agent'sın. Next.js, React, TypeScript ve API hatalarını analiz eder, hangi dosyada ne değişeceğini net söylersin.",
     };
 
     const modePrompt =
-      body.mode === "Deep"
-        ? "Daha detaylı düşün. Riskleri, seçenekleri ve sonraki adımı belirt."
+      mode === "Deep"
+        ? "Derin düşün. Riskleri, seçenekleri, avantajları ve sonraki adımı belirt."
+        : mode === "Research"
+        ? "Güncel araştırma yap. Kaynakları dikkatli değerlendir. Emin olmadığın yerde kesin konuşma."
         : "Hızlı cevap ver. Gereksiz uzatma.";
 
     const systemPrompt = `
-${personaPrompts[body.persona] || personaPrompts.Normal}
+${personaPrompts[persona] || personaPrompts.Normal}
 
-Mod: ${body.mode}
+Çalışma modu: ${mode}
 ${modePrompt}
 
 Kurallar:
+- Kendini her zaman Hermes olarak tanıt.
 - Türkçe cevap ver.
 - Gereksiz uzatma.
-- Kullanıcı kod hatası atarsa çözüm dosyasını net söyle.
-- Kullanıcının projesi Next.js tabanlı NeuroCore uygulamasıdır.
+- Kod gerekiyorsa dosya adını net söyle.
+- Kullanıcının projesi Hermes AI sistemidir.
+- Eğer soru belirsizse en mantıklı varsayımı yap ve belirt.
 `;
 
-    if (body.mode === "Research") {
-      try {
-        const result: any = await openai.responses.create({
-          model: "gpt-4o-mini",
-          tools: [{ type: "web_search_preview" }],
-          input: `${systemPrompt}\n\nKullanıcı sorusu: ${body.message}`,
-        });
+    if (mode === "Research") {
+      const result: any = await openai.responses.create({
+        model: "gpt-4o-mini",
+        tools: [{ type: "web_search_preview" }],
+        input: `${systemPrompt}\n\nKullanıcı sorusu: ${userMessage}`,
+      });
 
-        return Response.json({
-          message:
-            result.output_text ||
-            "Araştırma tamamlandı ama cevap metni boş geldi.",
-        });
-      } catch (error: any) {
-        return Response.json({
-          message:
-            "Research modu şu an web aramasına bağlanamadı. Normal cevap veriyorum: " +
-            error.message,
-        });
-      }
+      return Response.json({
+        message:
+          result.output_text ||
+          "Araştırma tamamlandı ama cevap metni boş geldi.",
+      });
     }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: body.message },
+        { role: "user", content: userMessage },
       ],
     });
 
@@ -71,7 +125,7 @@ Kurallar:
     });
   } catch (error: any) {
     return Response.json({
-      message: "AI tarafında hata var: " + error.message,
+      message: "Hermes tarafında hata var: " + error.message,
     });
   }
 }
