@@ -65,7 +65,7 @@ export default function Home() {
     <main className="h-screen bg-black text-white flex flex-col">
       <header className="border-b border-zinc-800 p-4">
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-          <div className="text-xl font-bold">NeuroCore</div>
+          <div className="text-xl font-bold">Hermes</div>
 
           <div className="flex gap-2">
             <select
