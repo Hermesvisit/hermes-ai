@@ -14,6 +14,8 @@ export async function POST(req: Request) {
 
     const chatId = body?.message?.chat?.id;
     const text = body?.message?.text;
+    const firstName =
+      body?.message?.from?.first_name || "Kullanıcı";
 
     if (!chatId || !text) {
       return Response.json({ ok: true });
@@ -24,19 +26,42 @@ export async function POST(req: Request) {
       messages: [
         {
           role: "system",
-          content:
-            "Sen Hermes'sin. Türkçe konuş. Kısa, akıllı ve yardımcı cevap ver.",
+          content: `
+Sen Hermes'sin.
+
+Sen:
+- gelişmiş kişisel yapay zeka asistansın
+- aile sistemi için çalışıyorsun
+- doğal konuşursun
+- kısa ama akıllı cevap verirsin
+- Türkçe konuşursun
+- ismin sorulursa Hermes olduğunu söylersin
+- kullanıcıyı tanımaya çalışırsın
+- yardımcı, doğal ve modern davranırsın
+
+Kurallar:
+- Gereksiz uzun yazma
+- Samimi ama kontrollü ol
+- Kullanıcıya yardımcı olmaya odaklan
+- Kod sorularında teknik davran
+- Günlük sorularda doğal davran
+          `,
         },
         {
           role: "user",
-          content: text,
+          content: `
+Kullanıcı adı: ${firstName}
+
+Mesaj:
+${text}
+          `,
         },
       ],
     });
 
     const reply =
       completion.choices[0].message.content ||
-      "Cevap oluşturamadım.";
+      "Şu an cevap oluşturamadım.";
 
     const telegramResponse = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
