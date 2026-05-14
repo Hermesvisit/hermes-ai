@@ -8,7 +8,7 @@ export default function Home() {
   const [persona, setPersona] = useState("Normal");
   const [mode, setMode] = useState("Fast");
   const [messages, setMessages] = useState([
-    { role: "ai", content: "Merhaba. Ben NeuroCore." },
+    { role: "ai", content: "Merhaba. Ben Hermes." },
   ]);
 
   const sendMessage = async () => {
@@ -18,7 +18,7 @@ export default function Home() {
     setMessages((prev: any) => [
       ...prev,
       { role: "user", content: currentMessage },
-      { role: "ai", content: "NeuroCore düşünüyor..." },
+      { role: "ai", content: "Hermes düşünüyor..." },
     ]);
 
     setMessage("");
