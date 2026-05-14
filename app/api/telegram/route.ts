@@ -10,10 +10,12 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const chatId = body.message.chat.id;
-    const text = body.message.text;
+    console.log("Telegram body:", body);
 
-    if (!text) {
+    const chatId = body?.message?.chat?.id;
+    const text = body?.message?.text;
+
+    if (!chatId || !text) {
       return Response.json({ ok: true });
     }
 
@@ -34,9 +36,9 @@ export async function POST(req: Request) {
 
     const reply =
       completion.choices[0].message.content ||
-      "Bir cevap oluşturamadım.";
+      "Cevap oluşturamadım.";
 
-    await fetch(
+    const telegramResponse = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
       {
         method: "POST",
@@ -50,8 +52,16 @@ export async function POST(req: Request) {
       }
     );
 
-    return Response.json({ ok: true });
+    const telegramData = await telegramResponse.json();
+
+    console.log("Telegram response:", telegramData);
+
+    return Response.json({
+      ok: true,
+    });
   } catch (error: any) {
+    console.log("Telegram ERROR:", error);
+
     return Response.json({
       ok: false,
       error: error.message,
