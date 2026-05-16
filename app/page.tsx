@@ -27,14 +27,8 @@ export default function Home() {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: currentMessage,
-          persona,
-          mode,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: currentMessage, persona, mode }),
       });
 
       const data = await response.json();
@@ -64,80 +58,49 @@ export default function Home() {
   return (
     <main className="h-screen bg-black text-white flex flex-col">
       <header className="border-b border-zinc-800 p-4">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <div className="text-xl font-bold">Hermes</div>
 
           <div className="flex gap-2">
-            <select
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
-              className="bg-zinc-900 text-white border border-zinc-700 rounded-xl px-3 py-2 outline-none"
-            >
-              <option value="Karışık Düşünme">Karışık Düşünme</option>
-              <option value="Normal">Normal</option>
-              <option value="CEO">CEO</option>
-              <option value="Analist">Analist</option>
+            <select value={persona} onChange={(e) => setPersona(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2">
+              <option>Karışık Düşünme</option>
+              <option>Normal</option>
+              <option>CEO</option>
+              <option>Analist</option>
               <option value="CodeAgent">Code Agent</option>
             </select>
 
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-              className="bg-zinc-900 text-white border border-zinc-700 rounded-xl px-3 py-2 outline-none"
-            >
-              <option value="Hibrit">Hibrit</option>
-              <option value="Fast">Fast</option>
-              <option value="Deep">Deep</option>
-              <option value="Research">Research</option>
+            <select value={mode} onChange={(e) => setMode(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2">
+              <option>Hibrit</option>
+              <option>Fast</option>
+              <option>Deep</option>
+              <option>Research</option>
             </select>
           </div>
         </div>
       </header>
 
       <div className="flex-1 p-4 overflow-y-auto">
-        <div className="max-w-3xl mx-auto space-y-4">
+        <div className="max-w-4xl mx-auto space-y-4">
           {messages.map((msg, index) => (
-            <div
-              key={index}
-              className={`whitespace-pre-wrap p-4 rounded-2xl w-fit max-w-[85%] ${
-                msg.role === "user"
-                  ? "bg-white text-black ml-auto"
-                  : "bg-zinc-900"
-              }`}
-            >
+            <div key={index} className={`whitespace-pre-wrap p-4 rounded-2xl w-fit max-w-[85%] ${
+              msg.role === "user" ? "bg-white text-black ml-auto" : "bg-zinc-900"
+            }`}>
               {msg.content}
             </div>
           ))}
         </div>
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          sendMessage();
-        }}
-        className="border-t border-zinc-800 p-3 bg-black"
-      >
-        <div className="max-w-3xl mx-auto flex gap-2">
+      <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="border-t border-zinc-800 p-3">
+        <div className="max-w-4xl mx-auto flex gap-2">
           <input
-            type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                sendMessage();
-              }
-            }}
             placeholder="Ne düşünüyorsun?"
-            className="min-w-0 flex-1 bg-zinc-900 text-white p-4 rounded-2xl outline-none"
+            className="flex-1 bg-zinc-900 text-white p-4 rounded-2xl outline-none"
           />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="shrink-0 bg-white text-black px-5 rounded-2xl font-semibold disabled:opacity-50"
-          >
+          <button disabled={loading} className="bg-white text-black px-6 rounded-2xl font-semibold disabled:opacity-50">
             {loading ? "..." : "Gönder"}
           </button>
         </div>

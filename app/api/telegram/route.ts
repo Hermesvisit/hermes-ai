@@ -1,22 +1,16 @@
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
     const chatId = body?.message?.chat?.id;
     const text = body?.message?.text;
     const firstName = body?.message?.from?.first_name || "Kullanıcı";
 
-    if (!chatId || !text) {
-      return Response.json({ ok: true });
-    }
+    if (!chatId || !text) return Response.json({ ok: true });
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -24,50 +18,31 @@ export async function POST(req: Request) {
         {
           role: "system",
           content: `
-Sen Hermes adlı kişisel yapay zeka asistanısın.
-
-Kurallar:
-- Türkçe konuş.
-- Kısa, doğal, akıllı ve yardımcı cevap ver.
-- Her cevaba "Ben Hermes" diye başlama.
-- Kendini sürekli tanıtma.
-- Sadece kullanıcı ismini sorarsa Hermes olduğunu söyle.
-- Aile kullanımına uygun, sade ve anlaşılır konuş.
-- Kod sorularında teknik ve net davran.
-- Gereksiz uzun yazma.
-          `,
+Sen Hermes adlı aile içi kişisel yapay zeka asistanısın.
+Türkçe konuş.
+Kısa, doğal, akıllı ve yardımcı cevap ver.
+Her cevaba "Ben Hermes" diye başlama.
+Sadece ismin sorulursa Hermes olduğunu söyle.
+Aile kullanımına uygun sade konuş.
+`,
         },
         {
           role: "user",
-          content: `
-Kullanıcı adı: ${firstName}
-
-Mesaj:
-${text}
-          `,
+          content: `Kullanıcı adı: ${firstName}\nMesaj: ${text}`,
         },
       ],
     });
 
-    const reply =
-      completion.choices[0].message.content || "Şu an cevap oluşturamadım.";
+    const reply = completion.choices[0].message.content || "Cevap oluşturamadım.";
 
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: reply,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: reply }),
     });
 
     return Response.json({ ok: true });
   } catch (error: any) {
-    return Response.json({
-      ok: false,
-      error: error.message,
-    });
+    return Response.json({ ok: false, error: error.message });
   }
 }
