@@ -10,12 +10,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    console.log("Telegram body:", body);
-
     const chatId = body?.message?.chat?.id;
     const text = body?.message?.text;
-    const firstName =
-      body?.message?.from?.first_name || "Kullanıcı";
+    const firstName = body?.message?.from?.first_name || "Kullanıcı";
 
     if (!chatId || !text) {
       return Response.json({ ok: true });
@@ -27,24 +24,17 @@ export async function POST(req: Request) {
         {
           role: "system",
           content: `
-Sen Hermes'sin.
-
-Sen:
-- gelişmiş kişisel yapay zeka asistansın
-- aile sistemi için çalışıyorsun
-- doğal konuşursun
-- kısa ama akıllı cevap verirsin
-- Türkçe konuşursun
-- ismin sorulursa Hermes olduğunu söylersin
-- kullanıcıyı tanımaya çalışırsın
-- yardımcı, doğal ve modern davranırsın
+Sen Hermes adlı kişisel yapay zeka asistanısın.
 
 Kurallar:
-- Gereksiz uzun yazma
-- Samimi ama kontrollü ol
-- Kullanıcıya yardımcı olmaya odaklan
-- Kod sorularında teknik davran
-- Günlük sorularda doğal davran
+- Türkçe konuş.
+- Kısa, doğal, akıllı ve yardımcı cevap ver.
+- Her cevaba "Ben Hermes" diye başlama.
+- Kendini sürekli tanıtma.
+- Sadece kullanıcı ismini sorarsa Hermes olduğunu söyle.
+- Aile kullanımına uygun, sade ve anlaşılır konuş.
+- Kod sorularında teknik ve net davran.
+- Gereksiz uzun yazma.
           `,
         },
         {
@@ -60,33 +50,21 @@ ${text}
     });
 
     const reply =
-      completion.choices[0].message.content ||
-      "Şu an cevap oluşturamadım.";
+      completion.choices[0].message.content || "Şu an cevap oluşturamadım.";
 
-    const telegramResponse = await fetch(
-      `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: reply,
-        }),
-      }
-    );
-
-    const telegramData = await telegramResponse.json();
-
-    console.log("Telegram response:", telegramData);
-
-    return Response.json({
-      ok: true,
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: reply,
+      }),
     });
-  } catch (error: any) {
-    console.log("Telegram ERROR:", error);
 
+    return Response.json({ ok: true });
+  } catch (error: any) {
     return Response.json({
       ok: false,
       error: error.message,
