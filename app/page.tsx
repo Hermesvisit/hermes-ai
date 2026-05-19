@@ -1,19 +1,150 @@
 "use client";
 
 import { useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function Home() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
   const [persona, setPersona] = useState("Karışık Düşünme");
   const [mode, setMode] = useState("Hibrit");
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   const [messages, setMessages] = useState([
-    { role: "ai", content: "Merhaba. Ben Hermes." },
+    {
+      role: "ai",
+      content: "Merhaba. Ben Hermes.",
+    },
   ]);
 
   const sendMessage = async () => {
     const currentMessage = message.trim();
+
     if (!currentMessage || loading) return;
+
+    const lower = currentMessage.toLowerCase();
+
+    if (
+      lower.startsWith("bunu hatırla") ||
+      lower.startsWith("bunu hatirla")
+    ) {
+      const memoryText = currentMessage
+        .replace(/^bunu hatırla[:：]?\s*/i, "")
+        .replace(/^bunu hatirla[:：]?\s*/i, "");
+
+      setMessages((prev: any) => [
+        ...prev,
+        { role: "user", content: currentMessage },
+        { role: "ai", content: "Hafızaya kaydediyorum..." },
+      ]);
+
+      setMessage("");
+      setLoading(true);
+
+      const { error } = await supabase.from("memory").insert([
+        {
+          user_id: "kemal",
+          content: memoryText,
+          category: "manual",
+        },
+      ]);
+
+      setMessages((prev: any) => {
+        const updated = [...prev];
+
+        updated[updated.length - 1] = {
+          role: "ai",
+          content: error
+            ? "Hafızaya kaydederken hata oldu: " + error.message
+            : "Tamam, bunu hatırlayacağım.",
+        };
+
+        return updated;
+      });
+
+      setLoading(false);
+      return;
+    }
+
+    const shouldAutoRemember =
+      lower.includes("ben ") ||
+      lower.includes("benim ") ||
+      lower.includes("annem ") ||
+      lower.includes("babam ") ||
+      lower.includes("kardeşim ") ||
+      lower.includes("kardesim ") ||
+      lower.includes("tercihim ") ||
+      lower.includes("bundan sonra ") ||
+      lower.includes("seviyorum") ||
+      lower.includes("sevmiyorum");
+
+    const sensitiveMemory =
+      lower.includes("şifre") ||
+      lower.includes("sifre") ||
+      lower.includes("parola") ||
+      lower.includes("kart") ||
+      lower.includes("banka") ||
+      lower.includes("tc kimlik");
+
+    if (shouldAutoRemember && !sensitiveMemory) {
+      await supabase.from("memory").insert([
+        {
+          user_id: "kemal",
+          content: currentMessage,
+          category: "auto",
+        },
+      ]);
+    }
+
+    if (
+      lower.startsWith("görev ekle") ||
+      lower.startsWith("gorev ekle") ||
+      lower.startsWith("bana görev ekle") ||
+      lower.startsWith("bana gorev ekle")
+    ) {
+      const taskTitle = currentMessage
+        .replace(/^görev ekle[:：]?\s*/i, "")
+        .replace(/^gorev ekle[:：]?\s*/i, "")
+        .replace(/^bana görev ekle[:：]?\s*/i, "")
+        .replace(/^bana gorev ekle[:：]?\s*/i, "");
+
+      setMessages((prev: any) => [
+        ...prev,
+        { role: "user", content: currentMessage },
+        { role: "ai", content: "Görev ekleniyor..." },
+      ]);
+
+      setMessage("");
+      setLoading(true);
+
+      const { error } = await supabase.from("tasks").insert([
+        {
+          user_id: "kemal",
+          title: taskTitle,
+          description: "",
+          status: "pending",
+        },
+      ]);
+
+      setMessages((prev: any) => {
+        const updated = [...prev];
+
+        updated[updated.length - 1] = {
+          role: "ai",
+          content: error
+            ? "Görev eklenirken hata oldu: " + error.message
+            : "Görev eklendi.",
+        };
+
+        return updated;
+      });
+
+      setLoading(false);
+      return;
+    }
 
     setMessages((prev: any) => [
       ...prev,
@@ -27,27 +158,37 @@ export default function Home() {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: currentMessage, persona, mode }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: currentMessage,
+          persona,
+          mode,
+        }),
       });
 
       const data = await response.json();
 
       setMessages((prev: any) => {
         const updated = [...prev];
+
         updated[updated.length - 1] = {
           role: "ai",
           content: data.message || "Cevap boş geldi.",
         };
+
         return updated;
       });
     } catch (error: any) {
       setMessages((prev: any) => {
         const updated = [...prev];
+
         updated[updated.length - 1] = {
           role: "ai",
           content: "Bağlantı hatası: " + error.message,
         };
+
         return updated;
       });
     }
@@ -56,55 +197,162 @@ export default function Home() {
   };
 
   return (
-    <main className="h-screen bg-black text-white flex flex-col">
-      <header className="border-b border-zinc-800 p-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
-          <div className="text-xl font-bold">Hermes</div>
+    <main className="h-screen bg-black text-white flex flex-col relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.07),transparent_45%)]" />
+
+      <header className="relative z-10 border-b border-zinc-800/80 p-5">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold tracking-[0.28em] text-violet-300">
+              HERMES
+            </h1>
+
+            <p className="text-zinc-500 text-sm mt-2">
+              AI Operating System
+            </p>
+          </div>
 
           <div className="flex gap-2">
-            <select value={persona} onChange={(e) => setPersona(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2">
-              <option>Karışık Düşünme</option>
-              <option>Normal</option>
-              <option>CEO</option>
-              <option>Analist</option>
-              <option value="CodeAgent">Code Agent</option>
-            </select>
+            <a
+              href="/voice"
+              className="bg-violet-700 hover:bg-violet-600 transition px-5 py-3 rounded-2xl font-semibold border border-violet-500/30 shadow-[0_0_18px_rgba(168,85,247,0.22)]"
+            >
+              Sesli Sohbet
+            </a>
 
-            <select value={mode} onChange={(e) => setMode(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2">
-              <option>Hibrit</option>
-              <option>Fast</option>
-              <option>Deep</option>
-              <option>Research</option>
-            </select>
+            <button
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              className="bg-zinc-900 border border-zinc-700 px-5 py-3 rounded-2xl hover:bg-zinc-800 transition"
+            >
+              Düşünme / Araştırma
+            </button>
           </div>
         </div>
+
+        {settingsOpen && (
+          <div className="max-w-5xl mx-auto mt-5 bg-zinc-950 border border-zinc-800 rounded-3xl p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p className="text-zinc-500 mb-2">Düşünme Tipi</p>
+
+              <select
+                value={persona}
+                onChange={(e) => setPersona(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3"
+              >
+                <option>Karışık Düşünme</option>
+                <option>Normal</option>
+                <option>CEO</option>
+                <option>Analist</option>
+                <option value="CodeAgent">Code Agent</option>
+              </select>
+            </div>
+
+            <div>
+              <p className="text-zinc-500 mb-2">Çalışma Modu</p>
+
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3"
+              >
+                <option>Hibrit</option>
+                <option>Fast</option>
+                <option>Deep</option>
+                <option>Research</option>
+              </select>
+            </div>
+          </div>
+        )}
       </header>
 
-      <div className="flex-1 p-4 overflow-y-auto">
-        <div className="max-w-4xl mx-auto space-y-4">
+      <section className="relative z-10 flex-1 overflow-y-auto p-5">
+        <div className="max-w-5xl mx-auto space-y-5 pb-32">
           {messages.map((msg, index) => (
-            <div key={index} className={`whitespace-pre-wrap p-4 rounded-2xl w-fit max-w-[85%] ${
-              msg.role === "user" ? "bg-white text-black ml-auto" : "bg-zinc-900"
-            }`}>
+            <div
+              key={index}
+              className={`whitespace-pre-wrap p-5 rounded-3xl max-w-[85%] ${
+                msg.role === "user"
+                  ? "bg-violet-700 text-white ml-auto border border-violet-500/20"
+                  : "bg-zinc-900 border border-zinc-800 text-zinc-100"
+              }`}
+            >
               {msg.content}
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="border-t border-zinc-800 p-3">
-        <div className="max-w-4xl mx-auto flex gap-2">
-          <input
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage();
+        }}
+        className="relative z-10 border-t border-zinc-800 bg-black/90 p-4"
+      >
+        <div className="max-w-5xl mx-auto flex gap-3 items-end">
+          <textarea
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Ne düşünüyorsun?"
-            className="flex-1 bg-zinc-900 text-white p-4 rounded-2xl outline-none"
+            onChange={(e) => {
+              setMessage(e.target.value);
+
+              e.target.style.height = "auto";
+              e.target.style.height = e.target.scrollHeight + "px";
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+              }
+            }}
+            rows={1}
+            placeholder="Hermes'e yaz..."
+            className="min-h-[58px] max-h-52 flex-1 resize-none overflow-y-auto bg-zinc-900 text-white p-4 rounded-2xl outline-none border border-zinc-800"
           />
-          <button disabled={loading} className="bg-white text-black px-6 rounded-2xl font-semibold disabled:opacity-50">
+
+          <button
+            disabled={loading}
+            className="bg-violet-700 hover:bg-violet-600 transition text-white px-7 py-4 rounded-2xl font-semibold border border-violet-500/20 shadow-[0_0_18px_rgba(168,85,247,0.2)] disabled:opacity-50"
+          >
             {loading ? "..." : "Gönder"}
           </button>
         </div>
       </form>
+
+      <button
+        onClick={() => setHistoryOpen(!historyOpen)}
+        className="fixed bottom-24 right-6 z-30 bg-violet-700 hover:bg-violet-600 transition text-white px-5 py-3 rounded-full border border-violet-500/20 shadow-[0_0_20px_rgba(168,85,247,0.22)]"
+      >
+        Geçmiş
+      </button>
+
+      {historyOpen && (
+        <div className="fixed right-6 bottom-40 z-30 w-[360px] max-h-[520px] overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-3xl p-5 shadow-2xl">
+          <h3 className="text-xl font-bold mb-4 text-violet-200">
+            Yakın Konuşmalar
+          </h3>
+
+          <div className="space-y-2">
+            {messages
+              .filter((msg) => msg.role === "user")
+              .slice(-8)
+              .reverse()
+              .map((msg, index) => (
+                <button
+                  key={index}
+                  className="w-full text-left bg-zinc-900 hover:bg-zinc-800 transition border border-zinc-800 rounded-2xl p-4 text-sm"
+                >
+                  <p className="text-zinc-200 truncate">
+                    {msg.content}
+                  </p>
+
+                  <p className="text-zinc-600 text-xs mt-1">
+                    Bu oturum
+                  </p>
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

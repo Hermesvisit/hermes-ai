@@ -4,12 +4,19 @@ import { useRef, useState } from "react";
 
 type HermesState = "idle" | "listening" | "thinking" | "speaking" | "error";
 
+type VoiceLog = {
+  role: "Sen" | "Hermes" | "Sistem";
+  text: string;
+};
+
 export default function VoicePage() {
   const [started, setStarted] = useState(false);
   const [state, setState] = useState<HermesState>("idle");
   const [lastText, setLastText] = useState("");
   const [reply, setReply] = useState("");
   const [volume, setVolume] = useState(0);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logs, setLogs] = useState<VoiceLog[]>([]);
 
   const recognitionRef = useRef<any>(null);
   const processingRef = useRef(false);
@@ -17,11 +24,16 @@ export default function VoicePage() {
   const audioRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<any>(null);
 
+  const addLog = (role: VoiceLog["role"], text: string) => {
+    setLogs((prev) => [...prev.slice(-12), { role, text }]);
+  };
+
   const startVolumeMeter = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const ctx = new AudioContext();
     const source = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
+
     analyser.fftSize = 512;
     source.connect(analyser);
 
@@ -30,6 +42,7 @@ export default function VoicePage() {
 
     const tick = () => {
       analyser.getByteTimeDomainData(data);
+
       let sum = 0;
 
       for (let i = 0; i < data.length; i++) {
@@ -38,9 +51,9 @@ export default function VoicePage() {
       }
 
       const rms = Math.sqrt(sum / data.length);
-      const boosted = Math.min(rms * 7, 1);
-      setVolume(boosted);
+      const boosted = Math.min(rms * 3.2, 1);
 
+      setVolume(boosted);
       rafRef.current = requestAnimationFrame(tick);
     };
 
@@ -53,25 +66,31 @@ export default function VoicePage() {
     } catch {
       setState("error");
       setReply("Mikrofon izni alınamadı.");
+      addLog("Sistem", "Mikrofon izni alınamadı.");
       return;
     }
 
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setState("error");
       setReply("Bu tarayıcı ses tanımayı desteklemiyor. Chrome kullan.");
+      addLog("Sistem", "Tarayıcı ses tanımayı desteklemiyor.");
       return;
     }
 
     setStarted(true);
     setState("listening");
+    addLog("Sistem", "Hermes voice başlatıldı.");
 
     const recognition = new SpeechRecognition();
+
     recognition.lang = "tr-TR";
     recognition.continuous = true;
     recognition.interimResults = true;
+
     recognitionRef.current = recognition;
 
     recognition.onresult = (event: any) => {
@@ -82,28 +101,34 @@ export default function VoicePage() {
       }
 
       transcript = transcript.trim();
+
       if (!transcript) return;
 
       setLastText(transcript);
       setState("listening");
 
       clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(() => sendToHermes(transcript), 1000);
+
+      silenceTimerRef.current = setTimeout(() => {
+        sendToHermes(transcript);
+      }, 1000);
     };
 
     recognition.onerror = (event: any) => {
       if (event.error === "no-speech" || event.error === "aborted") return;
+
       setState("error");
       setReply("Mikrofon hatası: " + event.error);
+      addLog("Sistem", "Mikrofon hatası: " + event.error);
     };
 
     recognition.onend = () => {
-      if (!processingRef.current) {
+      if (!processingRef.current && started) {
         setTimeout(() => {
           try {
             recognition.start();
           } catch {}
-        }, 500);
+        }, 600);
       }
     };
 
@@ -117,14 +142,21 @@ export default function VoicePage() {
 
     processingRef.current = true;
     setState("thinking");
+    addLog("Sen", text);
 
     try {
       recognitionRef.current?.stop();
 
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, persona: "Karışık Düşünme", mode: "Fast" }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: text,
+          persona: "Karışık Düşünme",
+          mode: "Fast",
+        }),
       });
 
       const data = await response.json();
@@ -132,6 +164,7 @@ export default function VoicePage() {
 
       setReply(answer);
       setState("speaking");
+      addLog("Hermes", answer);
 
       const utterance = new SpeechSynthesisUtterance(answer);
       utterance.lang = "tr-TR";
@@ -149,74 +182,379 @@ export default function VoicePage() {
           try {
             recognitionRef.current?.start();
           } catch {}
-        }, 500);
+        }, 600);
       };
     } catch (error: any) {
       processingRef.current = false;
       setState("error");
       setReply("Bağlantı hatası: " + error.message);
+      addLog("Sistem", "Bağlantı hatası: " + error.message);
     }
   };
 
+  const stopSpeaking = () => {
+    window.speechSynthesis.cancel();
+    processingRef.current = false;
+    setState("listening");
+
+    setTimeout(() => {
+      try {
+        recognitionRef.current?.start();
+      } catch {}
+    }, 500);
+  };
+
   const theme = {
-    idle: ["Hermes beklemede", "rgba(168,85,247,0.55)", "rgba(120,40,180,0.18)"],
-    listening: ["Dinliyorum...", "rgba(168,85,247,0.75)", "rgba(120,40,180,0.22)"],
-    thinking: ["Düşünüyorum...", "rgba(59,130,246,0.9)", "rgba(37,99,235,0.25)"],
-    speaking: ["Konuşuyorum...", "rgba(192,132,252,0.95)", "rgba(150,60,220,0.3)"],
-    error: ["Hata algılandı", "rgba(239,68,68,0.9)", "rgba(180,20,20,0.24)"],
+    idle: {
+      label: started ? "Hazır" : "Hermes beklemede",
+      glow: "rgba(168,85,247,0.55)",
+      bg: "rgba(120,40,180,0.13)",
+      core: "rgba(88,28,135,0.22)",
+    },
+    listening: {
+      label: "Dinliyorum...",
+      glow: "rgba(168,85,247,0.72)",
+      bg: "rgba(120,40,180,0.16)",
+      core: "rgba(88,28,135,0.22)",
+    },
+    thinking: {
+      label: "Düşünüyorum...",
+      glow: "rgba(59,130,246,0.9)",
+      bg: "rgba(37,99,235,0.2)",
+      core: "rgba(30,58,138,0.2)",
+    },
+    speaking: {
+      label: "Konuşuyorum...",
+      glow: "rgba(192,132,252,0.95)",
+      bg: "rgba(150,60,220,0.22)",
+      core: "rgba(88,28,135,0.28)",
+    },
+    error: {
+      label: "Hata algılandı",
+      glow: "rgba(239,68,68,0.9)",
+      bg: "rgba(180,20,20,0.2)",
+      core: "rgba(127,29,29,0.22)",
+    },
   }[state];
 
-  const scale = state === "listening" ? 1 + volume * 0.35 : state === "speaking" ? 1.08 : 1;
-  const glowSize = 90 + volume * 180;
+  const voiceScale =
+    state === "listening"
+      ? 1 + volume * 0.14
+      : state === "speaking"
+      ? 1.06
+      : 1;
+
+  const glowSize = 65 + volume * 70;
 
   return (
     <main className="min-h-screen bg-black text-white overflow-hidden relative">
-      <div className="absolute inset-0" style={{ background: `radial-gradient(circle at center, ${theme[2]}, transparent 55%)` }} />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `radial-gradient(circle at center, ${theme.bg}, transparent 58%)`,
+        }}
+      />
+
+      <a
+        href="/"
+        className="fixed top-6 left-6 z-30 bg-zinc-900/80 border border-zinc-700 text-zinc-200 px-5 py-3 rounded-2xl hover:bg-zinc-800 transition"
+      >
+        Mesajlaşmaya Geç
+      </a>
 
       <div className="relative z-10 flex items-center justify-center h-screen">
         <div className="flex flex-col items-center">
-          <div className="relative w-[500px] h-[500px] flex items-center justify-center transition-transform duration-75" style={{ transform: `scale(${scale})` }}>
-            <div className="absolute w-full h-full rounded-full border animate-pulse" style={{ borderColor: theme[1] }} />
-            <div className="absolute w-[430px] h-[430px] rounded-full border animate-pulse" style={{ borderColor: theme[1], opacity: 0.4 }} />
-            <div className="absolute w-[340px] h-[340px] rounded-full blur-3xl" style={{ backgroundColor: theme[1], opacity: 0.7 }} />
+          <div
+            className="relative w-[520px] h-[520px] flex items-center justify-center transition-transform duration-500 perspective"
+            style={{
+              transform: `scale(${voiceScale})`,
+            }}
+          >
+            <div
+              className="absolute w-full h-full rounded-full border opacity-30 soft-orbit"
+              style={{ borderColor: theme.glow }}
+            />
 
-            <div className="relative w-[360px] h-[360px] rounded-full border overflow-hidden backdrop-blur-xl" style={{
-              borderColor: theme[1],
-              backgroundColor: state === "thinking" ? "rgba(30,58,138,0.18)" : state === "error" ? "rgba(127,29,29,0.18)" : "rgba(88,28,135,0.22)",
-              boxShadow: `0 0 ${glowSize}px ${theme[1]}`,
-            }}>
-              {[...Array(55)].map((_, i) => (
-                <span key={i} className="absolute rounded-full transition-all duration-75"
-                  style={{
-                    width: `${2 + (i % 4) + volume * 8}px`,
-                    height: `${2 + (i % 4) + volume * 8}px`,
-                    left: `${10 + ((i * 37) % 80)}%`,
-                    top: `${10 + ((i * 59) % 80)}%`,
-                    backgroundColor: theme[1],
-                    boxShadow: `0 0 ${15 + volume * 50}px ${theme[1]}`,
-                    opacity: 0.35 + volume * 0.65,
-                  }}
-                />
-              ))}
+            <div
+              className="absolute w-[455px] h-[455px] rounded-full border opacity-25 soft-orbit-reverse"
+              style={{ borderColor: theme.glow }}
+            />
 
-              <div className="absolute inset-10 rounded-full border animate-pulse" style={{ borderColor: theme[1], opacity: 0.35 }} />
-              <div className="absolute inset-[34%] rounded-full animate-pulse" style={{ backgroundColor: theme[1], boxShadow: `0 0 ${80 + volume * 120}px ${theme[1]}` }} />
+            <div
+              className="absolute w-[380px] h-[380px] rounded-full blur-3xl soft-glow"
+              style={{ backgroundColor: theme.glow }}
+            />
+
+            <div
+              className={`relative w-[365px] h-[365px] rounded-full border overflow-hidden backdrop-blur-xl sphere-3d ${
+                state === "speaking" ? "speak-breath" : "idle-breath"
+              }`}
+              style={{
+                borderColor: theme.glow,
+                backgroundColor: theme.core,
+                boxShadow: `inset -40px -45px 80px rgba(0,0,0,0.7), inset 28px 25px 60px rgba(255,255,255,0.08), 0 0 ${glowSize}px ${theme.glow}`,
+              }}
+            >
+              <div
+                className="absolute inset-0 rounded-full opacity-80"
+                style={{
+                  background:
+                    "radial-gradient(circle at 32% 28%, rgba(255,255,255,0.25), transparent 20%), radial-gradient(circle at 65% 72%, rgba(0,0,0,0.42), transparent 38%)",
+                }}
+              />
+
+              <div className="absolute inset-0 network-layer">
+                {[...Array(60)].map((_, i) => (
+                  <span
+                    key={i}
+                    className="absolute rounded-full transition-all duration-300"
+                    style={{
+                      width: `${2 + (i % 4) + volume * 5}px`,
+                      height: `${2 + (i % 4) + volume * 5}px`,
+                      left: `${10 + ((i * 37) % 80)}%`,
+                      top: `${10 + ((i * 59) % 80)}%`,
+                      backgroundColor: theme.glow,
+                      opacity: 0.28 + volume * 0.32,
+                      boxShadow: `0 0 ${10 + volume * 20}px ${theme.glow}`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              <div
+                className="absolute inset-10 rounded-full border opacity-30 inner-breath"
+                style={{ borderColor: theme.glow }}
+              />
+
+              <div
+                className="absolute inset-20 rounded-full border opacity-25 inner-breath-slow"
+                style={{ borderColor: theme.glow }}
+              />
+
+              <div
+                className="absolute inset-[35%] rounded-full core-heart"
+                style={{
+                  backgroundColor: theme.glow,
+                  boxShadow: `0 0 ${75 + volume * 60}px ${theme.glow}`,
+                }}
+              />
             </div>
           </div>
 
-          <h1 className="text-6xl font-bold text-violet-100 mt-10 tracking-[0.35em]">HERMES</h1>
-          <p className="mt-4 text-lg" style={{ color: theme[1] }}>{theme[0]}</p>
+          <h1 className="text-6xl font-bold text-violet-200 mt-8 tracking-[0.35em]">
+            HERMES
+          </h1>
 
-          {lastText && <p className="mt-4 max-w-2xl text-center text-zinc-400">Sen: {lastText}</p>}
-          {reply && <p className="mt-3 max-w-2xl text-center text-zinc-300">Hermes: {reply}</p>}
+          <p className="mt-4 text-lg" style={{ color: theme.glow }}>
+            {theme.label}
+          </p>
 
           {!started && (
-            <button onClick={startHermes} className="mt-8 px-8 py-4 rounded-full bg-violet-600 text-white border border-violet-300 shadow-[0_0_35px_rgba(168,85,247,0.8)]">
+            <button
+              onClick={startHermes}
+              className="mt-8 px-8 py-4 rounded-full bg-violet-700 hover:bg-violet-600 transition text-white border border-violet-500/30 shadow-[0_0_22px_rgba(168,85,247,0.28)]"
+            >
               Hermes’i Başlat
+            </button>
+          )}
+
+          {started && (
+            <button
+              onClick={stopSpeaking}
+              className="mt-6 px-5 py-2 rounded-full bg-zinc-900 text-white border border-zinc-700 hover:bg-zinc-800 transition"
+            >
+              Sustur
             </button>
           )}
         </div>
       </div>
+
+      {started && (
+        <button
+          onClick={() => setLogsOpen(!logsOpen)}
+          className="fixed bottom-6 right-6 z-30 bg-violet-700 hover:bg-violet-600 transition text-white px-5 py-3 rounded-full border border-violet-500/20 shadow-[0_0_20px_rgba(168,85,247,0.22)]"
+        >
+          Konuşma
+        </button>
+      )}
+
+      {logsOpen && (
+        <div className="fixed right-6 bottom-20 z-30 w-[380px] max-h-[520px] overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-3xl p-5 shadow-2xl">
+          <h3 className="text-xl font-bold mb-4 text-violet-200">
+            Canlı Konuşma
+          </h3>
+
+          <div className="space-y-3">
+            {logs.length === 0 && (
+              <p className="text-zinc-500 text-sm">
+                Konuşma başladığında burada görünecek.
+              </p>
+            )}
+
+            {logs.map((log, index) => (
+              <div
+                key={index}
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3 text-sm"
+              >
+                <p className="text-zinc-500 mb-1">{log.role}</p>
+                <p className="text-zinc-200">{log.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        .perspective {
+          perspective: 1000px;
+        }
+
+        .sphere-3d {
+          transform-style: preserve-3d;
+          animation: sphereRotate 18s ease-in-out infinite;
+        }
+
+        .soft-orbit {
+          animation: softOrbit 16s ease-in-out infinite;
+        }
+
+        .soft-orbit-reverse {
+          animation: softOrbitReverse 22s ease-in-out infinite;
+        }
+
+        .soft-glow {
+          animation: softGlow 5s ease-in-out infinite;
+          opacity: 0.55;
+        }
+
+        .network-layer {
+          animation: networkDrift 14s ease-in-out infinite;
+        }
+
+        .idle-breath {
+          animation: sphereRotate 18s ease-in-out infinite,
+            idleBreath 3.8s ease-in-out infinite;
+        }
+
+        .speak-breath {
+          animation: sphereRotate 14s ease-in-out infinite,
+            speakBreath 1.25s ease-in-out infinite;
+        }
+
+        .inner-breath {
+          animation: innerBreath 3.5s ease-in-out infinite;
+        }
+
+        .inner-breath-slow {
+          animation: innerBreath 4.6s ease-in-out infinite;
+        }
+
+        .core-heart {
+          animation: coreHeart 2.6s ease-in-out infinite;
+        }
+
+        @keyframes sphereRotate {
+          0% {
+            transform: rotateX(10deg) rotateY(-16deg);
+          }
+          50% {
+            transform: rotateX(14deg) rotateY(18deg);
+          }
+          100% {
+            transform: rotateX(10deg) rotateY(-16deg);
+          }
+        }
+
+        @keyframes softOrbit {
+          0%,
+          100% {
+            transform: scale(1) rotate(0deg);
+            opacity: 0.22;
+          }
+          50% {
+            transform: scale(1.035) rotate(12deg);
+            opacity: 0.38;
+          }
+        }
+
+        @keyframes softOrbitReverse {
+          0%,
+          100% {
+            transform: scale(1) rotate(0deg);
+            opacity: 0.18;
+          }
+          50% {
+            transform: scale(1.045) rotate(-10deg);
+            opacity: 0.32;
+          }
+        }
+
+        @keyframes softGlow {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 0.35;
+          }
+          50% {
+            transform: scale(1.08);
+            opacity: 0.62;
+          }
+        }
+
+        @keyframes networkDrift {
+          0%,
+          100% {
+            transform: translate3d(0, 0, 0) scale(1);
+          }
+          50% {
+            transform: translate3d(8px, -6px, 0) scale(1.025);
+          }
+        }
+
+        @keyframes idleBreath {
+          0%,
+          100% {
+            filter: brightness(1);
+          }
+          50% {
+            filter: brightness(1.1);
+          }
+        }
+
+        @keyframes speakBreath {
+          0%,
+          100% {
+            filter: brightness(1);
+          }
+          50% {
+            filter: brightness(1.12);
+          }
+        }
+
+        @keyframes innerBreath {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 0.22;
+          }
+          50% {
+            transform: scale(1.045);
+            opacity: 0.42;
+          }
+        }
+
+        @keyframes coreHeart {
+          0%,
+          100% {
+            transform: scale(1);
+            filter: brightness(1);
+          }
+          50% {
+            transform: scale(1.08);
+            filter: brightness(1.24);
+          }
+        }
+      `}</style>
     </main>
   );
 }
