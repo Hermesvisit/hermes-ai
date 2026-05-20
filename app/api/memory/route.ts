@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseClient, getSupabaseErrorMessage } from "@/lib/supabase";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { user_id, content, category } = body;
 
-    const { data, error } = await supabase
+    const client = getSupabaseClient();
+
+    if (!client) {
+      return NextResponse.json({
+        success: false,
+        error: "Supabase yapılandırılmamış veya kullanılamıyor.",
+      });
+    }
+
+    const { data, error } = await client
       .from("memory")
       .insert([
         {
@@ -22,14 +31,26 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ success: true, data });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message });
+  } catch (err) {
+    return NextResponse.json({
+      success: false,
+      error: getSupabaseErrorMessage(err),
+    });
   }
 }
 
 export async function GET() {
   try {
-    const { data, error } = await supabase
+    const client = getSupabaseClient();
+
+    if (!client) {
+      return NextResponse.json({
+        success: false,
+        error: "Supabase yapılandırılmamış veya kullanılamıyor.",
+      });
+    }
+
+    const { data, error } = await client
       .from("memory")
       .select("*")
       .eq("user_id", "kemal")
@@ -41,7 +62,10 @@ export async function GET() {
     }
 
     return NextResponse.json({ success: true, data });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message });
+  } catch (err) {
+    return NextResponse.json({
+      success: false,
+      error: getSupabaseErrorMessage(err),
+    });
   }
 }

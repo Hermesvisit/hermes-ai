@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+
+type Message = {
+  role: "user" | "ai";
+  content: string;
+};
 
 export default function Home() {
   const [message, setMessage] = useState("");
@@ -13,7 +17,7 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
       role: "ai",
       content: "Merhaba. Ben Hermes.",
@@ -25,128 +29,7 @@ export default function Home() {
 
     if (!currentMessage || loading) return;
 
-    const lower = currentMessage.toLowerCase();
-
-    if (
-      lower.startsWith("bunu hatırla") ||
-      lower.startsWith("bunu hatirla")
-    ) {
-      const memoryText = currentMessage
-        .replace(/^bunu hatırla[:：]?\s*/i, "")
-        .replace(/^bunu hatirla[:：]?\s*/i, "");
-
-      setMessages((prev: any) => [
-        ...prev,
-        { role: "user", content: currentMessage },
-        { role: "ai", content: "Hafızaya kaydediyorum..." },
-      ]);
-
-      setMessage("");
-      setLoading(true);
-
-      const { error } = await supabase.from("memory").insert([
-        {
-          user_id: "kemal",
-          content: memoryText,
-          category: "manual",
-        },
-      ]);
-
-      setMessages((prev: any) => {
-        const updated = [...prev];
-
-        updated[updated.length - 1] = {
-          role: "ai",
-          content: error
-            ? "Hafızaya kaydederken hata oldu: " + error.message
-            : "Tamam, bunu hatırlayacağım.",
-        };
-
-        return updated;
-      });
-
-      setLoading(false);
-      return;
-    }
-
-    const shouldAutoRemember =
-      lower.includes("ben ") ||
-      lower.includes("benim ") ||
-      lower.includes("annem ") ||
-      lower.includes("babam ") ||
-      lower.includes("kardeşim ") ||
-      lower.includes("kardesim ") ||
-      lower.includes("tercihim ") ||
-      lower.includes("bundan sonra ") ||
-      lower.includes("seviyorum") ||
-      lower.includes("sevmiyorum");
-
-    const sensitiveMemory =
-      lower.includes("şifre") ||
-      lower.includes("sifre") ||
-      lower.includes("parola") ||
-      lower.includes("kart") ||
-      lower.includes("banka") ||
-      lower.includes("tc kimlik");
-
-    if (shouldAutoRemember && !sensitiveMemory) {
-      await supabase.from("memory").insert([
-        {
-          user_id: "kemal",
-          content: currentMessage,
-          category: "auto",
-        },
-      ]);
-    }
-
-    if (
-      lower.startsWith("görev ekle") ||
-      lower.startsWith("gorev ekle") ||
-      lower.startsWith("bana görev ekle") ||
-      lower.startsWith("bana gorev ekle")
-    ) {
-      const taskTitle = currentMessage
-        .replace(/^görev ekle[:：]?\s*/i, "")
-        .replace(/^gorev ekle[:：]?\s*/i, "")
-        .replace(/^bana görev ekle[:：]?\s*/i, "")
-        .replace(/^bana gorev ekle[:：]?\s*/i, "");
-
-      setMessages((prev: any) => [
-        ...prev,
-        { role: "user", content: currentMessage },
-        { role: "ai", content: "Görev ekleniyor..." },
-      ]);
-
-      setMessage("");
-      setLoading(true);
-
-      const { error } = await supabase.from("tasks").insert([
-        {
-          user_id: "kemal",
-          title: taskTitle,
-          description: "",
-          status: "pending",
-        },
-      ]);
-
-      setMessages((prev: any) => {
-        const updated = [...prev];
-
-        updated[updated.length - 1] = {
-          role: "ai",
-          content: error
-            ? "Görev eklenirken hata oldu: " + error.message
-            : "Görev eklendi.",
-        };
-
-        return updated;
-      });
-
-      setLoading(false);
-      return;
-    }
-
-    setMessages((prev: any) => [
+    setMessages((prev) => [
       ...prev,
       { role: "user", content: currentMessage },
       { role: "ai", content: "Hermes düşünüyor..." },
@@ -168,32 +51,42 @@ export default function Home() {
         }),
       });
 
-      const data = await response.json();
+      let data: { success?: boolean; message?: string } = {};
 
-      setMessages((prev: any) => {
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      setMessages((prev) => {
         const updated = [...prev];
 
         updated[updated.length - 1] = {
           role: "ai",
-          content: data.message || "Cevap boş geldi.",
+          content: response.ok
+            ? data.message || "Cevap boş geldi."
+            : data.message || "Hermes tarafında bilinmeyen bir hata oluştu.",
         };
 
         return updated;
       });
-    } catch (error: any) {
-      setMessages((prev: any) => {
+    } catch (error) {
+      setMessages((prev) => {
         const updated = [...prev];
 
         updated[updated.length - 1] = {
           role: "ai",
-          content: "Bağlantı hatası: " + error.message,
+          content:
+            "Bağlantı hatası: " +
+            (error instanceof Error ? error.message : "bilinmeyen hata"),
         };
 
         return updated;
       });
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -341,13 +234,9 @@ export default function Home() {
                   key={index}
                   className="w-full text-left bg-zinc-900 hover:bg-zinc-800 transition border border-zinc-800 rounded-2xl p-4 text-sm"
                 >
-                  <p className="text-zinc-200 truncate">
-                    {msg.content}
-                  </p>
+                  <p className="text-zinc-200 truncate">{msg.content}</p>
 
-                  <p className="text-zinc-600 text-xs mt-1">
-                    Bu oturum
-                  </p>
+                  <p className="text-zinc-600 text-xs mt-1">Bu oturum</p>
                 </button>
               ))}
           </div>

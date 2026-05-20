@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseClient } from "@/lib/supabase";
 
 export default function TestMemoryPage() {
   const [text, setText] = useState("");
@@ -10,18 +10,32 @@ export default function TestMemoryPage() {
   const saveMemory = async () => {
     setResult("Kaydediliyor...");
 
-    const { error } = await supabase.from("memory").insert([
-      {
-        user_id: "kemal",
-        content: text,
-        category: "general",
-      },
-    ]);
+    const client = getSupabaseClient();
 
-    if (error) {
-      setResult("Hata: " + error.message);
-    } else {
-      setResult("Hafıza kaydedildi 😄");
+    if (!client) {
+      setResult("Supabase kullanılamıyor. Ortam değişkenlerini kontrol et.");
+      return;
+    }
+
+    try {
+      const { error } = await client.from("memory").insert([
+        {
+          user_id: "kemal",
+          content: text,
+          category: "general",
+        },
+      ]);
+
+      if (error) {
+        setResult("Hata: " + error.message);
+      } else {
+        setResult("Hafıza kaydedildi 😄");
+      }
+    } catch (error) {
+      setResult(
+        "Bağlantı hatası: " +
+          (error instanceof Error ? error.message : "bilinmeyen hata")
+      );
     }
   };
 

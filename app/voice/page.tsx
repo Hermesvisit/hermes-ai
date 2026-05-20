@@ -1,8 +1,38 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 
 type HermesState = "idle" | "listening" | "thinking" | "speaking" | "error";
+
+type SpeechRecognitionResultItem = { transcript: string };
+type SpeechRecognitionResult = {
+  0: SpeechRecognitionResultItem;
+  length: number;
+};
+type SpeechRecognitionResultList = {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+};
+type SpeechRecognitionResultEvent = {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+};
+type SpeechRecognitionErrorEvent = { error: string };
+type BrowserSpeechRecognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type SpeechWindow = Window & {
+  SpeechRecognition?: new () => BrowserSpeechRecognition;
+  webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+};
 
 type VoiceLog = {
   role: "Sen" | "Hermes" | "Sistem";
@@ -18,11 +48,11 @@ export default function VoicePage() {
   const [logsOpen, setLogsOpen] = useState(false);
   const [logs, setLogs] = useState<VoiceLog[]>([]);
 
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const processingRef = useRef(false);
-  const silenceTimerRef = useRef<any>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
-  const rafRef = useRef<any>(null);
+  const rafRef = useRef<number | null>(null);
 
   const addLog = (role: VoiceLog["role"], text: string) => {
     setLogs((prev) => [...prev.slice(-12), { role, text }]);
@@ -70,9 +100,9 @@ export default function VoicePage() {
       return;
     }
 
+    const speechWindow = window as SpeechWindow;
     const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+      speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setState("error");
@@ -93,7 +123,7 @@ export default function VoicePage() {
 
     recognitionRef.current = recognition;
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionResultEvent) => {
       let transcript = "";
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -107,14 +137,16 @@ export default function VoicePage() {
       setLastText(transcript);
       setState("listening");
 
-      clearTimeout(silenceTimerRef.current);
+      if (silenceTimerRef.current !== null) {
+        clearTimeout(silenceTimerRef.current);
+      }
 
       silenceTimerRef.current = setTimeout(() => {
         sendToHermes(transcript);
       }, 1000);
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (event.error === "no-speech" || event.error === "aborted") return;
 
       setState("error");
@@ -184,11 +216,13 @@ export default function VoicePage() {
           } catch {}
         }, 600);
       };
-    } catch (error: any) {
+    } catch (error) {
       processingRef.current = false;
+      const message =
+        error instanceof Error ? error.message : "bilinmeyen hata";
       setState("error");
-      setReply("Bağlantı hatası: " + error.message);
-      addLog("Sistem", "Bağlantı hatası: " + error.message);
+      setReply("Bağlantı hatası: " + message);
+      addLog("Sistem", "Bağlantı hatası: " + message);
     }
   };
 
@@ -255,12 +289,12 @@ export default function VoicePage() {
         }}
       />
 
-      <a
+      <Link
         href="/"
         className="fixed top-6 left-6 z-30 bg-zinc-900/80 border border-zinc-700 text-zinc-200 px-5 py-3 rounded-2xl hover:bg-zinc-800 transition"
       >
         Mesajlaşmaya Geç
-      </a>
+      </Link>
 
       <div className="relative z-10 flex items-center justify-center h-screen">
         <div className="flex flex-col items-center">
@@ -348,6 +382,18 @@ export default function VoicePage() {
           <p className="mt-4 text-lg" style={{ color: theme.glow }}>
             {theme.label}
           </p>
+
+          {lastText && state === "listening" && (
+            <p className="mt-3 text-sm text-zinc-500 text-center max-w-lg px-4">
+              {lastText}
+            </p>
+          )}
+
+          {reply && (state === "speaking" || state === "error") && (
+            <p className="mt-3 text-sm text-zinc-400 text-center max-w-lg px-4 line-clamp-4">
+              {reply}
+            </p>
+          )}
 
           {!started && (
             <button

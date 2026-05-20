@@ -1,7 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseClient } from "@/lib/supabase";
+
+type MemoryRow = {
+  id: number;
+  content: string;
+  category: string;
+  created_at: string;
+};
+
+type TaskRow = {
+  id: number;
+  title: string;
+  description?: string;
+  status: string;
+  created_at: string;
+};
 
 const sections = [
   "Genel Durum",
@@ -20,36 +35,62 @@ const sections = [
 export default function AdminPage() {
   const [activeSection, setActiveSection] = useState("Genel Durum");
 
-  const [memories, setMemories] = useState<any[]>([]);
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [memories, setMemories] = useState<MemoryRow[]>([]);
+  const [tasks, setTasks] = useState<TaskRow[]>([]);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
 
   const loadMemories = async () => {
-    const { data } = await supabase
-      .from("memory")
-      .select("*")
-      .eq("user_id", "kemal")
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const client = getSupabaseClient();
 
-    setMemories(data || []);
+    if (!client) {
+      setMemories([]);
+      return;
+    }
+
+    try {
+      const { data } = await client
+        .from("memory")
+        .select("*")
+        .eq("user_id", "kemal")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      setMemories(data || []);
+    } catch {
+      setMemories([]);
+    }
   };
 
   const loadTasks = async () => {
-    const { data } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("user_id", "kemal")
-      .order("created_at", { ascending: false });
+    const client = getSupabaseClient();
 
-    setTasks(data || []);
+    if (!client) {
+      setTasks([]);
+      return;
+    }
+
+    try {
+      const { data } = await client
+        .from("tasks")
+        .select("*")
+        .eq("user_id", "kemal")
+        .order("created_at", { ascending: false });
+
+      setTasks(data || []);
+    } catch {
+      setTasks([]);
+    }
   };
 
   useEffect(() => {
-    loadMemories();
-    loadTasks();
+    const timer = window.setTimeout(() => {
+      void loadMemories();
+      void loadTasks();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   return (
@@ -115,8 +156,8 @@ function AdminContent({
   setEditText,
 }: {
   section: string;
-  memories: any[];
-  tasks: any[];
+  memories: MemoryRow[];
+  tasks: TaskRow[];
   reloadMemories: () => Promise<void>;
   reloadTasks: () => Promise<void>;
   editingId: number | null;
@@ -157,10 +198,17 @@ function AdminContent({
                     <div className="flex gap-2 mt-3">
                       <button
                         onClick={async () => {
-                          await supabase
-                            .from("memory")
-                            .update({ content: editText })
-                            .eq("id", memory.id);
+                          const client = getSupabaseClient();
+                          if (!client) return;
+
+                          try {
+                            await client
+                              .from("memory")
+                              .update({ content: editText })
+                              .eq("id", memory.id);
+                          } catch {
+                            return;
+                          }
 
                           setEditingId(null);
                           setEditText("");
@@ -204,10 +252,17 @@ function AdminContent({
 
                       <button
                         onClick={async () => {
-                          await supabase
-                            .from("memory")
-                            .delete()
-                            .eq("id", memory.id);
+                          const client = getSupabaseClient();
+                          if (!client) return;
+
+                          try {
+                            await client
+                              .from("memory")
+                              .delete()
+                              .eq("id", memory.id);
+                          } catch {
+                            return;
+                          }
 
                           await reloadMemories();
                         }}
@@ -278,15 +333,22 @@ function AdminContent({
                   <div className="flex gap-2">
                     <button
                       onClick={async () => {
-                        await supabase
-                          .from("tasks")
-                          .update({
-                            status:
-                              task.status === "done"
-                                ? "pending"
-                                : "done",
-                          })
-                          .eq("id", task.id);
+                        const client = getSupabaseClient();
+                        if (!client) return;
+
+                        try {
+                          await client
+                            .from("tasks")
+                            .update({
+                              status:
+                                task.status === "done"
+                                  ? "pending"
+                                  : "done",
+                            })
+                            .eq("id", task.id);
+                        } catch {
+                          return;
+                        }
 
                         await reloadTasks();
                       }}
@@ -299,10 +361,17 @@ function AdminContent({
 
                     <button
                       onClick={async () => {
-                        await supabase
-                          .from("tasks")
-                          .delete()
-                          .eq("id", task.id);
+                        const client = getSupabaseClient();
+                        if (!client) return;
+
+                        try {
+                          await client
+                            .from("tasks")
+                            .delete()
+                            .eq("id", task.id);
+                        } catch {
+                          return;
+                        }
 
                         await reloadTasks();
                       }}

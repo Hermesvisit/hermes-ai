@@ -1,4 +1,5 @@
-import { supabase } from "@/lib/supabase";
+import { saveMemory, listMemories } from "@/lib/hermes/memory";
+import { handleHermesMessage } from "@/lib/hermes/router";
 
 async function sendTelegramMessage(chatId: number, text: string) {
   const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -43,19 +44,11 @@ export async function POST(req: Request) {
         .replace(/^bunu hatırla[:：]?\s*/i, "")
         .replace(/^bunu hatirla[:：]?\s*/i, "");
 
-      const { error } = await supabase.from("memory").insert([
-        {
-          user_id: "kemal",
-          content: memoryText,
-          category: "telegram",
-        },
-      ]);
+      const result = await saveMemory(memoryText, "telegram");
 
       await sendTelegramMessage(
         chatId,
-        error
-          ? "Hafızaya kaydederken hata oldu: " + error.message
-          : "Tamam, bunu hatırlayacağım."
+        result.message || "Hafıza işlemi tamamlandı."
       );
 
       return Response.json({ ok: true });
@@ -67,58 +60,32 @@ export async function POST(req: Request) {
       lower.includes("hafızanda ne var") ||
       lower.includes("hafizanda ne var")
     ) {
-      const { data, error } = await supabase
-        .from("memory")
-        .select("*")
-        .eq("user_id", "kemal")
-        .order("created_at", { ascending: false })
-        .limit(20);
+      const result = await listMemories();
 
-      if (error) {
-        await sendTelegramMessage(
-          chatId,
-          "Hafızayı okurken hata oldu: " + error.message
-        );
-        return Response.json({ ok: true });
-      }
+      await sendTelegramMessage(
+        chatId,
+        result.message || "Hafıza listesi boş."
+      );
 
-      if (!data || data.length === 0) {
-        await sendTelegramMessage(chatId, "Şu an kayıtlı bir hafızam yok.");
-        return Response.json({ ok: true });
-      }
-
-      const memories = data
-        .map((item: any, index: number) => `${index + 1}. ${item.content}`)
-        .join("\n");
-
-      await sendTelegramMessage(chatId, `Hatırladıklarım:\n\n${memories}`);
       return Response.json({ ok: true });
     }
 
-    const chatResponse = await fetch(new URL("/api/chat", req.url), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: text,
-        persona: "Karışık Düşünme",
-        mode: "Fast",
-      }),
+    const chatResult = await handleHermesMessage({
+      message: text,
+      selectedPersona: "Karışık Düşünme",
+      selectedMode: "Fast",
     });
-
-    const chatData = await chatResponse.json();
 
     await sendTelegramMessage(
       chatId,
-      chatData.message || "Cevap oluşturamadım."
+      chatResult.message || "Cevap oluşturamadım."
     );
 
     return Response.json({ ok: true });
-  } catch (error: any) {
+  } catch (error) {
     return Response.json({
       ok: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : "Bilinmeyen hata",
     });
   }
 }
