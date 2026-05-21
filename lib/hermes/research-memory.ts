@@ -59,6 +59,39 @@ function normalizeTags(tags: string[] | undefined, sourceType: ResearchSourceTyp
   return [...new Set(merged)].slice(0, 12);
 }
 
+function normalizeSourceType(value: unknown): ResearchSourceType {
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+
+  if (raw === "opportunity_score" || raw === "opportunity" || raw === "firsat_analizi") {
+    return "opportunity_score";
+  }
+
+  if (raw === "founder_review" || raw === "founder") {
+    return "founder_review";
+  }
+
+  if (raw === "competitor_plan" || raw === "competitor") {
+    return "competitor_plan";
+  }
+
+  if (raw === "market_analysis" || raw === "market") {
+    return "market_analysis";
+  }
+
+  return "market_analysis";
+}
+
+function isOpportunityScoreRecord(item: ResearchMemory): boolean {
+  return (
+    normalizeSourceType(item.sourceType) === "opportunity_score" ||
+    item.tags.some((tag) => tag === "opportunity_score")
+  );
+}
+
 function mapRowToMemory(row: Record<string, unknown>): ResearchMemory {
   const tagsValue = row.tags;
 
@@ -89,7 +122,7 @@ function mapRowToMemory(row: Record<string, unknown>): ResearchMemory {
         ? null
         : Number(row.score),
     created_at: String(row.created_at ?? new Date().toISOString()),
-    sourceType: (row.source_type ?? row.sourceType ?? "market_analysis") as ResearchSourceType,
+    sourceType: normalizeSourceType(row.source_type ?? row.sourceType),
     agentId: String(row.agent_id ?? row.agentId ?? "RESEARCH_AGENT"),
   };
 }
@@ -218,6 +251,12 @@ export async function saveResearchMemory(input: {
 }
 
 async function loadMemories(limit = 30): Promise<ResearchMemory[]> {
+  const merged = new Map<string, ResearchMemory>();
+
+  for (const item of localResearchMemories) {
+    merged.set(item.id, item);
+  }
+
   const client = getSupabaseClient();
 
   if (client) {
@@ -229,19 +268,149 @@ async function loadMemories(limit = 30): Promise<ResearchMemory[]> {
         .order("created_at", { ascending: false })
         .limit(limit);
 
-      if (!error && data && data.length > 0) {
-        return data.map((row) =>
-          mapRowToMemory(row as Record<string, unknown>)
-        );
+      if (!error && data) {
+        for (const row of data) {
+          const memory = mapRowToMemory(row as Record<string, unknown>);
+          merged.set(memory.id, memory);
+        }
       }
     } catch {
-      // Yerel fallback ile devam
+      // Yerel kayıtlarla devam
     }
   }
 
-  return [...localResearchMemories]
+  return [...merged.values()]
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, limit);
+}
+
+function parseComparisonIdeas(query: string): string[] {
+  const raw = query.trim();
+
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(
+      /\n+|(?:\s+vs\.?\s+)|(?:\s+veya\s+)|(?:\s+ile\s+)|(?:\s*,\s*|;|\|)/i
+    )
+    .map((part) => part.replace(/^[-*•\d.)\]]+\s*/, "").trim())
+    .filter((part) => part.length >= 2);
+}
+
+function topicMatchesIdea(idea: string, item: ResearchMemory): boolean {
+  const ideaLower = idea.toLowerCase().trim();
+  const topicLower = item.topic.toLowerCase();
+  const summaryLower = item.summary.toLowerCase();
+
+  if (!ideaLower) {
+    return false;
+  }
+
+  if (
+    topicLower.includes(ideaLower) ||
+    ideaLower.includes(topicLower) ||
+    summaryLower.includes(ideaLower)
+  ) {
+    return true;
+  }
+
+  const ideaTokens = ideaLower.split(/\s+/).filter((token) => token.length > 2);
+
+  if (ideaTokens.length === 0) {
+    return topicLower.includes(ideaLower);
+  }
+
+  const matchedCount = ideaTokens.filter(
+    (token) => topicLower.includes(token) || summaryLower.includes(token)
+  ).length;
+
+  if (ideaTokens.length === 1) {
+    return matchedCount >= 1;
+  }
+
+  return matchedCount >= Math.min(2, ideaTokens.length) || matchedCount >= 1;
+}
+
+function rankByScore(items: ResearchMemory[]): ResearchMemory[] {
+  return [...items].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+}
+
+function sortByCreatedAt(items: ResearchMemory[]): ResearchMemory[] {
+  return [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+function getOpportunityScoreRecords(memories: ResearchMemory[]): ResearchMemory[] {
+  return sortByCreatedAt(memories.filter(isOpportunityScoreRecord));
+}
+
+function selectOpportunitiesForCompare(
+  opportunities: ResearchMemory[],
+  query: string
+): ResearchMemory[] {
+  const ideas = parseComparisonIdeas(query);
+
+  if (ideas.length >= 2) {
+    const matched: ResearchMemory[] = [];
+
+    for (const idea of ideas) {
+      const candidates = opportunities.filter((item) => topicMatchesIdea(idea, item));
+
+      if (candidates.length === 0) {
+        continue;
+      }
+
+      const best = rankByScore(candidates)[0];
+
+      if (best && !matched.some((item) => item.id === best.id)) {
+        matched.push(best);
+      }
+    }
+
+    if (matched.length >= 2) {
+      return rankByScore(matched).slice(0, 2);
+    }
+  }
+
+  if (ideas.length === 1) {
+    const matched = rankByScore(
+      opportunities.filter((item) => topicMatchesIdea(ideas[0], item))
+    );
+
+    if (matched.length >= 2) {
+      return matched.slice(0, 2);
+    }
+
+    if (matched.length === 1) {
+      const other = rankByScore(
+        opportunities.filter((item) => item.id !== matched[0].id)
+      )[0];
+
+      if (other) {
+        return rankByScore([matched[0], other]);
+      }
+    }
+  }
+
+  const needle = query.trim().toLowerCase();
+
+  if (needle) {
+    const matched = rankByScore(
+      opportunities.filter(
+        (item) =>
+          topicMatchesIdea(needle, item) ||
+          item.topic.toLowerCase().includes(needle) ||
+          item.summary.toLowerCase().includes(needle)
+      )
+    );
+
+    if (matched.length >= 2) {
+      return matched.slice(0, 2);
+    }
+  }
+
+  return sortByCreatedAt(opportunities).slice(0, 2);
 }
 
 export async function listResearchMemories(
@@ -372,47 +541,55 @@ ${recent}`,
 export async function compareOpportunities(
   query = ""
 ): Promise<ResearchMemoryResult> {
-  const opportunities = (await loadMemories(LOCAL_MAX)).filter(
-    (item): item is OpportunityHistory =>
-      item.sourceType === "opportunity_score" ||
-      item.sourceType === "founder_review" ||
-      item.sourceType === "market_analysis"
+  const opportunityScores = getOpportunityScoreRecords(
+    await loadMemories(LOCAL_MAX)
   );
 
-  if (opportunities.length < 2) {
+  if (opportunityScores.length < 2) {
     return {
       success: false,
       message:
-        "Karşılaştırma için en az iki araştırma kaydı gerekli. Önce birkaç `fırsat analizi:` veya `bu fikir mantıklı mı:` çalıştır.",
+        "Karşılaştırma için en az iki `fırsat analizi:` kaydı gerekli. Önce iki farklı fikir için fırsat analizi çalıştır.",
     };
   }
 
-  const needle = query.trim().toLowerCase();
-  let pool = opportunities;
+  const matched = selectOpportunitiesForCompare(opportunityScores, query);
+  const latest = sortByCreatedAt(opportunityScores).slice(0, 2);
 
-  if (needle) {
-    pool = opportunities.filter(
-      (item) =>
-        item.topic.toLowerCase().includes(needle) ||
-        item.summary.toLowerCase().includes(needle)
-    );
+  let first: ResearchMemory | undefined;
+  let second: ResearchMemory | undefined;
+  let usedFallback = false;
+
+  if (matched.length >= 2) {
+    first = matched[0];
+    second = matched[1];
+  } else if (matched.length === 1) {
+    const picked = matched[0];
+    first = picked;
+    second = latest.find((item) => item.id !== picked.id);
+    usedFallback = true;
+  } else {
+    first = latest[0];
+    second = latest[1];
+    usedFallback = Boolean(query.trim());
   }
 
-  const ranked = [...pool].sort((a, b) => {
-    const scoreA = a.score ?? -1;
-    const scoreB = b.score ?? -1;
-    return scoreB - scoreA;
-  });
-
-  const first = ranked[0];
-  const second = ranked[1];
-
-  if (!first || !second) {
+  if (!first || !second || first.id === second.id) {
     return {
       success: false,
       message: "Karşılaştırılacak yeterli kayıt bulunamadı.",
     };
   }
+
+  return buildComparisonResult(first, second, query, usedFallback);
+}
+
+function buildComparisonResult(
+  first: ResearchMemory,
+  second: ResearchMemory,
+  query: string,
+  usedFallback: boolean
+): ResearchMemoryResult {
 
   const winner =
     (first.score ?? 0) === (second.score ?? 0)
@@ -421,9 +598,17 @@ export async function compareOpportunities(
       ? `Şu an daha mantıklı görünen: **${first.topic}** (skor ${first.score ?? "yok"})`
       : `Şu an daha mantıklı görünen: **${second.topic}** (skor ${second.score ?? "yok"})`;
 
+  const hint = query.trim()
+    ? usedFallback
+      ? "Belirttiğin fikirler tam eşleşmedi; hafızadaki en yüksek skorlu iki kayıt karşılaştırıldı."
+      : "Belirttiğin fikirlere göre eşleşen kayıtlar karşılaştırıldı."
+    : "Hafızadaki en son iki fırsat analizi kaydı karşılaştırıldı.";
+
   return {
     success: true,
     message: `## Fırsat Karşılaştırması
+
+${hint}
 
 **A:** ${first.topic} — skor ${first.score ?? "yok"} (${first.sourceType}, ${first.agentId})
 Özet: ${first.summary.slice(0, 280)}...
@@ -525,6 +710,7 @@ export async function handleResearchMemoryRouterCommand(
     const query = message
       .replace(/hangi fikir daha mant[ıi]kl[ıi]\s*:?\s*/i, "")
       .replace(/hangi fikir daha mantikli\s*:?\s*/i, "")
+      .replace(/^\s*[-*•]\s*/gm, "")
       .trim();
 
     return compareOpportunities(query);
