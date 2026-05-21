@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import { checkHermesAccess } from "@/lib/hermes/access";
 import { getSupabaseClient, getSupabaseErrorMessage } from "@/lib/supabase";
 
 export async function POST(req: Request) {
+  const denied = checkHermesAccess(req);
+
+  if (denied) {
+    return denied;
+  }
+
   try {
     const body = await req.json();
     const { user_id, content, category } = body;
@@ -39,7 +46,13 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const denied = checkHermesAccess(req);
+
+  if (denied) {
+    return denied;
+  }
+
   try {
     const client = getSupabaseClient();
 

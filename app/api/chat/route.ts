@@ -1,6 +1,13 @@
+import { checkHermesAccess } from "@/lib/hermes/access";
 import { handleHermesMessage } from "@/lib/hermes/router";
 
 export async function POST(req: Request) {
+  const denied = checkHermesAccess(req);
+
+  if (denied) {
+    return denied;
+  }
+
   try {
     const body = await req.json();
 

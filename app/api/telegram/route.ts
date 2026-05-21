@@ -1,3 +1,4 @@
+import { checkHermesAccess } from "@/lib/hermes/access";
 import { saveMemory, listMemories } from "@/lib/hermes/memory";
 import { handleHermesMessage } from "@/lib/hermes/router";
 
@@ -16,7 +17,13 @@ async function sendTelegramMessage(chatId: number, text: string) {
   });
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const denied = checkHermesAccess(req);
+
+  if (denied) {
+    return denied;
+  }
+
   return Response.json({
     ok: true,
     message: "Hermes Telegram route is alive.",
@@ -24,6 +31,12 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = checkHermesAccess(req);
+
+  if (denied) {
+    return denied;
+  }
+
   try {
     const body = await req.json();
 

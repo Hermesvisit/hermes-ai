@@ -1,13 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  clearStoredHermesAccessKey,
+  getHermesAccessHeaders,
+  getStoredHermesAccessKey,
+  storeHermesAccessKey,
+} from "@/lib/hermes/access-client";
 
 type Message = {
   role: "user" | "ai";
   content: string;
 };
 
+type AuthState = "loading" | "required" | "ok";
+
 export default function Home() {
+  const [authState, setAuthState] = useState<AuthState>("loading");
+  const [accessKeyInput, setAccessKeyInput] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [verifying, setVerifying] = useState(false);
+
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -23,6 +36,76 @@ export default function Home() {
       content: "Merhaba. Ben Hermes.",
     },
   ]);
+
+  useEffect(() => {
+    async function initAuth() {
+      try {
+        const response = await fetch("/api/auth/status");
+        const data = (await response.json()) as { required?: boolean };
+
+        if (!data.required) {
+          setAuthState("ok");
+          return;
+        }
+
+        if (getStoredHermesAccessKey()) {
+          setAuthState("ok");
+          return;
+        }
+
+        setAuthState("required");
+      } catch {
+        setAuthState("required");
+      }
+    }
+
+    void initAuth();
+  }, []);
+
+  const requireAuthAgain = (reason?: string) => {
+    clearStoredHermesAccessKey();
+    setAuthState("required");
+    setAuthError(reason || "");
+  };
+
+  const verifyAccess = async () => {
+    const key = accessKeyInput.trim();
+
+    if (!key) {
+      setAuthError("Lütfen erişim anahtarını girin.");
+      return;
+    }
+
+    setAuthError("");
+    setVerifying(true);
+
+    try {
+      const response = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ accessKey: key }),
+      });
+
+      const data = (await response.json()) as { success?: boolean; message?: string };
+
+      if (!response.ok) {
+        setAuthError(
+          data.message || "Geçersiz erişim anahtarı. Lütfen tekrar deneyin."
+        );
+        return;
+      }
+
+      storeHermesAccessKey(key);
+      setAccessKeyInput("");
+      setAuthState("ok");
+    } catch {
+      setAuthError("Bağlantı hatası. Lütfen tekrar deneyin.");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const sendMessage = async () => {
     const currentMessage = message.trim();
@@ -43,6 +126,7 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...getHermesAccessHeaders(),
         },
         body: JSON.stringify({
           message: currentMessage,
@@ -57,6 +141,13 @@ export default function Home() {
         data = await response.json();
       } catch {
         data = {};
+      }
+
+      if (response.status === 401) {
+        requireAuthAgain(
+          data.message || "Oturum süresi doldu veya erişim anahtarı geçersiz."
+        );
+        return;
       }
 
       setMessages((prev) => {
@@ -88,6 +179,63 @@ export default function Home() {
       setLoading(false);
     }
   };
+
+  if (authState === "loading") {
+    return (
+      <main className="h-screen bg-black text-white flex items-center justify-center">
+        <p className="text-zinc-400">Hermes yükleniyor...</p>
+      </main>
+    );
+  }
+
+  if (authState === "required") {
+    return (
+      <main className="h-screen bg-black text-white flex items-center justify-center p-6">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.12),transparent_50%)]" />
+
+        <div className="relative z-10 w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-8 shadow-2xl">
+          <h1 className="text-3xl font-bold tracking-[0.2em] text-violet-300">
+            HERMES
+          </h1>
+          <p className="text-zinc-500 text-sm mt-2 mb-6">Erişim doğrulaması</p>
+
+          <p className="text-zinc-300 text-sm mb-4">
+            Bu Hermes dağıtımı korumalıdır. Devam etmek için erişim anahtarını
+            girin.
+          </p>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void verifyAccess();
+            }}
+            className="space-y-4"
+          >
+            <input
+              type="password"
+              value={accessKeyInput}
+              onChange={(e) => setAccessKeyInput(e.target.value)}
+              placeholder="Erişim anahtarı"
+              autoComplete="current-password"
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3 outline-none focus:border-violet-500"
+            />
+
+            {authError ? (
+              <p className="text-sm text-red-400">{authError}</p>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={verifying}
+              className="w-full bg-violet-700 hover:bg-violet-600 transition text-white px-5 py-3 rounded-2xl font-semibold border border-violet-500/30 disabled:opacity-50"
+            >
+              {verifying ? "Doğrulanıyor..." : "Giriş yap"}
+            </button>
+          </form>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="h-screen bg-black text-white flex flex-col relative overflow-hidden">
