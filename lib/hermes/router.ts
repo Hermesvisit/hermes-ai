@@ -50,6 +50,13 @@ import {
   getAgentById,
 } from "@/lib/hermes/agents";
 
+import { handleMarketRouterCommand } from "@/lib/hermes/market-intelligence";
+
+import {
+  handleResearchMemoryRouterCommand,
+  getResearchContext,
+} from "@/lib/hermes/research-memory";
+
 import OpenAI from "openai";
 
 function getOpenAIClient() {
@@ -207,6 +214,24 @@ export async function handleHermesMessage(params: {
     return {
       success: true,
       message: recommendAgentForTask(task),
+    };
+  }
+
+  const researchCmd = await handleResearchMemoryRouterCommand(message);
+
+  if (researchCmd) {
+    return {
+      success: researchCmd.success,
+      message: researchCmd.message,
+    };
+  }
+
+  const marketResult = await handleMarketRouterCommand(message);
+
+  if (marketResult) {
+    return {
+      success: marketResult.success,
+      message: marketResult.message,
     };
   }
 
@@ -469,9 +494,11 @@ export async function handleHermesMessage(params: {
   const agent = resolveAgentForMessage(message);
 
   const memoryContext = await getMemoryContext();
+  const researchContext = await getResearchContext();
 
   const systemPrompt = buildSystemPrompt({
     memoryContext,
+    researchContext,
     persona,
     mode,
     agent,

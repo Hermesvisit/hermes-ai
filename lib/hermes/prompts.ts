@@ -28,7 +28,9 @@ export function detectPersona(message: string, selectedPersona: string): HermesP
     lower.includes("risk") ||
     lower.includes("analiz") ||
     lower.includes("karşılaştır") ||
-    lower.includes("mantıklı mı")
+    (lower.includes("mantıklı mı") &&
+      !lower.startsWith("bu fikir mantıklı mı") &&
+      !lower.startsWith("bu fikir mantikli mi"))
   ) {
     return "Analist";
   }
@@ -78,11 +80,12 @@ export function detectMode(message: string, selectedMode: string): HermesMode {
 
 export function buildSystemPrompt(params: {
   memoryContext: string;
+  researchContext: string;
   persona: HermesPersona;
   mode: HermesMode;
   agent: HermesAgent;
 }) {
-  const { memoryContext, persona, mode, agent } = params;
+  const { memoryContext, researchContext, persona, mode, agent } = params;
 
   const personaPrompts: Record<HermesPersona, string> = {
     Normal:
@@ -114,6 +117,8 @@ ${memoryContext}
 ${getBusinessContextPrompt()}
 
 ${getAgentContextPrompt(agent)}
+
+${researchContext}
 
 Hermes'in uzun vadeli vizyonu:
 - Personal AI

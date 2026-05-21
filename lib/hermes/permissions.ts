@@ -170,24 +170,70 @@ export function checkPlanningPermission(
 export function explainPermissionLimits(): string {
   const level = getCurrentPermissionLevel();
 
-  return `## Hermes Yetkileri
+  return `## Hermes — Yetkiler ve Yetenekler
 
-**Aktif seviye:** LEVEL_${level} (Security Review)
+**Aktif izin seviyesi:** LEVEL_${level} (Security Review dahil)
 
-### Yapabilir
-- Sohbet ve kişisel hafıza/görev komutları (LEVEL_1)
-- Proje dosyalarını güvenli okuma: \`proje yapısını göster\`, \`dosya oku:\`, \`dosyayı analiz et:\` (LEVEL_2)
-- Metin patch planı: \`değişiklik planı oluştur:\`, \`bu özelliği nasıl ekleriz:\`, \`hangi dosyalar değişmeli\` (LEVEL_3)
-- Plan güvenlik incelemesi — tehlikeli örüntülerde plan reddi (LEVEL_4)
+### Aktif modüller
+| Modül | Durum | Açıklama |
+|-------|-------|----------|
+| Chat | açık | Genel sohbet, persona/mod, OpenAI yanıtları |
+| Memory | açık | Kalıcı kullanıcı tercihleri ve notlar |
+| Tasks | açık | Görev ekleme, listeleme, tamamlama |
+| Project Reader | açık | Repo yapısını güvenli listeleme |
+| File Reader | açık | Tek dosya okuma (path traversal korumalı) |
+| File Analysis | açık | Dosya içeriği analizi (salt okunur) |
+| Patch Planner | açık | Metin patch planı (dosyaya yazmaz) |
+| Security Review | açık | Planlarda tehlikeli örüntü taraması |
+| Permission Layer | açık | Yetki seviyeleri ve kapsam dışı istek reddi |
+| Business Identity | açık | İş profili ve bağlam enjeksiyonu |
+| Agent Registry | açık | CEO/CTO/Research/Marketing/Sales/UX agent seçimi |
+| Market Intelligence | açık | Pazar analizi, fırsat skoru, rakip planı, fikir değerlendirme |
+| Research Memory | açık | Araştırma geçmişi, karşılaştırma, otomatik pazar kaydı |
 
-### Yapamaz (bilinçli olarak kapalı)
-- Dosya yazma / otomatik düzenleme (LEVEL_5 — ${canWriteFiles() ? "açık" : "kapalı"})
-- Terminal veya shell komutu (LEVEL_6 — ${canRunTerminal() ? "açık" : "kapalı"})
-- Deploy / canlıya alma (LEVEL_7 — ${canDeploy() ? "açık" : "kapalı"})
+### Bilinçli olarak kapalı
+- **Dosya yazma** — kapalı (LEVEL_5; otomatik düzenleme / patch uygulama yok)
+- **Terminal** — kapalı (LEVEL_6; shell, npm run, exec önerilmez)
+- **Deploy** — kapalı (LEVEL_7; canlıya alma / Vercel deploy yok)
+
+Hermes dosyalara doğrudan yazmaz; plan ve analiz üretir, değişiklikleri sen uygularsın.
 
 ### Örnek komutlar
-- \`yetkilerimi göster\` veya \`hermes ne yapabilir\`
-- \`değişiklik planı oluştur: chat UI'ya yetki paneli ekle\`
 
-Hermes dosyalarına doğrudan yazmaz; plan üretir, sen uygularsın.`;
+**Genel / izin**
+- \`yetkilerimi göster\` · \`hermes ne yapabilir\`
+
+**Memory & Tasks**
+- \`bunu hatırla: …\` · \`ne hatırlıyorsun\`
+- \`görev ekle: …\` · \`görevlerim\` · \`görevi tamamla 1\`
+
+**Project Reader / File Reader / File Analysis**
+- \`proje yapısını göster\`
+- \`dosya oku: lib/hermes/router.ts\`
+- \`dosyayı analiz et: app/page.tsx\`
+
+**Patch Planner** (çıktı Security Review'dan geçer)
+- \`değişiklik planı oluştur: …\`
+- \`bu özelliği nasıl ekleriz: …\`
+- \`hangi dosyalar değişmeli: …\`
+
+**Business Identity**
+- \`iş profilini göster\` · \`hermes kim\` · \`sektörümüz ne\`
+
+**Agent Registry**
+- \`agentleri göster\` · \`hangi agent aktif\`
+- \`CTO agent olarak düşün\` · \`bu işi hangi agent yapmalı: …\`
+
+**Market Intelligence**
+- \`pazar analizi: AI SaaS fikir doğrulama\`
+- \`fırsat analizi: B2B otomasyon aracı\`
+- \`rakip analizi planı: …\`
+- \`bu fikir mantıklı mı: …\`
+
+**Research Memory**
+- \`araştırma hafızası\` · \`geçmiş fırsatlar\`
+- \`son araştırmalar\` · \`eski analizleri göster\`
+- \`hangi fikir daha mantıklı: …\`
+
+Pazar komutları başarılı olduğunda özetler Research Memory'ye otomatik kaydedilir.`;
 }
