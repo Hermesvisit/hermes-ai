@@ -1,4 +1,11 @@
 import { getBusinessInstance } from "@/lib/hermes/business-instances";
+import { USER_ID } from "@/lib/hermes/memory";
+import {
+  describeSupabaseError,
+  formatHermesInsertFallbackMessage,
+  getSupabaseClient,
+  logHermesSupabaseInsert,
+} from "@/lib/supabase";
 
 export type LeadStatus =
   | "new"
@@ -59,8 +66,404 @@ const customers: CustomerRecord[] = [];
 const leads: LeadRecord[] = [];
 const conversations: ConversationRecord[] = [];
 
+let hydrationPromise: Promise<void> | null = null;
+
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function mergeById<T extends { id: string }>(base: T[], incoming: T[]): T[] {
+  const map = new Map<string, T>();
+
+  for (const item of base) {
+    map.set(item.id, item);
+  }
+
+  for (const item of incoming) {
+    map.set(item.id, item);
+  }
+
+  return [...map.values()];
+}
+
+function rememberCustomerLocally(customer: CustomerRecord) {
+  const index = customers.findIndex((item) => item.id === customer.id);
+
+  if (index >= 0) {
+    customers[index] = customer;
+    return;
+  }
+
+  customers.push(customer);
+}
+
+function rememberLeadLocally(lead: LeadRecord) {
+  const index = leads.findIndex((item) => item.id === lead.id);
+
+  if (index >= 0) {
+    leads[index] = lead;
+    return;
+  }
+
+  leads.push(lead);
+}
+
+function rememberConversationLocally(conversation: ConversationRecord) {
+  const index = conversations.findIndex((item) => item.id === conversation.id);
+
+  if (index >= 0) {
+    conversations[index] = conversation;
+    return;
+  }
+
+  conversations.push(conversation);
+}
+
+function parseMessages(value: unknown): ConversationMessage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      role: (item.role === "assistant" || item.role === "system"
+        ? item.role
+        : "customer") as ConversationMessage["role"],
+      content: String(item.content ?? ""),
+      at: String(item.at ?? new Date().toISOString()),
+    }));
+}
+
+function mapCustomerRow(row: Record<string, unknown>): CustomerRecord {
+  return {
+    id: String(row.id ?? createId("cust")),
+    businessId: String(row.business_id ?? row.businessId ?? ""),
+    name: String(row.name ?? ""),
+    phone: String(row.phone ?? ""),
+    source: String(row.source ?? "manual"),
+    notes: String(row.notes ?? ""),
+    createdAt: String(row.created_at ?? row.createdAt ?? new Date().toISOString()),
+  };
+}
+
+function mapLeadRow(row: Record<string, unknown>): LeadRecord {
+  const status = String(row.status ?? "new");
+
+  return {
+    id: String(row.id ?? createId("lead")),
+    businessId: String(row.business_id ?? row.businessId ?? ""),
+    customerId: String(row.customer_id ?? row.customerId ?? ""),
+    interest: String(row.interest ?? ""),
+    status: (
+      ["new", "contacted", "qualified", "booked", "lost"].includes(status)
+        ? status
+        : "new"
+    ) as LeadStatus,
+    priority: (
+      row.priority === "low" || row.priority === "high" ? row.priority : "medium"
+    ) as LeadPriority,
+    lastMessage: String(row.last_message ?? row.lastMessage ?? ""),
+    followUpNeeded: Boolean(row.follow_up_needed ?? row.followUpNeeded ?? true),
+    createdAt: String(row.created_at ?? row.createdAt ?? new Date().toISOString()),
+  };
+}
+
+function mapConversationRow(row: Record<string, unknown>): ConversationRecord {
+  return {
+    id: String(row.id ?? createId("conv")),
+    businessId: String(row.business_id ?? row.businessId ?? ""),
+    customerId: String(row.customer_id ?? row.customerId ?? ""),
+    channel: String(row.channel ?? "manual"),
+    messages: parseMessages(row.messages),
+    summary: String(row.summary ?? ""),
+    intent: String(row.intent ?? "genel_iletisim"),
+    createdAt: String(row.created_at ?? row.createdAt ?? new Date().toISOString()),
+  };
+}
+
+function seedLeadMemory() {
+  if (customers.length > 0) {
+    return;
+  }
+
+  const novaId = "biz-klinik-nova";
+  const whiteId = "biz-whitesmile";
+
+  const novaCust1: CustomerRecord = {
+    id: "cust-nova-ahmet",
+    businessId: novaId,
+    name: "Ahmet Yılmaz",
+    phone: "+90 532 000 11 22",
+    source: "WhatsApp",
+    notes: "İmplant fiyatı sordu",
+    createdAt: "2025-03-01T09:00:00.000Z",
+  };
+
+  const novaCust2: CustomerRecord = {
+    id: "cust-nova-elif",
+    businessId: novaId,
+    name: "Elif Kaya",
+    phone: "+90 533 000 33 44",
+    source: "Web formu",
+    notes: "Diş taşı temizliği",
+    createdAt: "2025-03-02T11:00:00.000Z",
+  };
+
+  const whiteCust1: CustomerRecord = {
+    id: "cust-white-selin",
+    businessId: whiteId,
+    name: "Selin Demir",
+    phone: "+90 534 000 55 66",
+    source: "Instagram DM",
+    notes: "Beyazlatma kampanyası",
+    createdAt: "2025-03-03T14:00:00.000Z",
+  };
+
+  rememberCustomerLocally(novaCust1);
+  rememberCustomerLocally(novaCust2);
+  rememberCustomerLocally(whiteCust1);
+
+  rememberLeadLocally({
+    id: "lead-nova-ahmet-implant",
+    businessId: novaId,
+    customerId: novaCust1.id,
+    interest: "İmplant fiyatı ve randevu",
+    status: "contacted",
+    priority: "high",
+    lastMessage: "İmplant fiyatı nedir, bu hafta müsait misiniz?",
+    followUpNeeded: true,
+    createdAt: "2025-03-01T09:15:00.000Z",
+  });
+
+  rememberLeadLocally({
+    id: "lead-nova-elif-cleaning",
+    businessId: novaId,
+    customerId: novaCust2.id,
+    interest: "Diş taşı temizliği randevusu",
+    status: "new",
+    priority: "medium",
+    lastMessage: "Cumartesi öğleden sonra uygun mu?",
+    followUpNeeded: true,
+    createdAt: "2025-03-02T11:30:00.000Z",
+  });
+
+  rememberLeadLocally({
+    id: "lead-white-selin-whiten",
+    businessId: whiteId,
+    customerId: whiteCust1.id,
+    interest: "Diş beyazlatma kampanyası",
+    status: "qualified",
+    priority: "medium",
+    lastMessage: "Kampanya fiyatını öğrenmek istiyorum",
+    followUpNeeded: false,
+    createdAt: "2025-03-03T14:20:00.000Z",
+  });
+
+  rememberConversationLocally({
+    id: "conv-nova-ahmet-1",
+    businessId: novaId,
+    customerId: novaCust1.id,
+    channel: "WhatsApp",
+    messages: [
+      {
+        role: "customer",
+        content: "Merhaba, implant fiyatı nedir?",
+        at: "2025-03-01T09:10:00.000Z",
+      },
+      {
+        role: "assistant",
+        content:
+          "Merhaba, ön görüşme randevusu ile başlıyoruz. Uygun gününüzü paylaşır mısınız?",
+        at: "2025-03-01T09:12:00.000Z",
+      },
+    ],
+    summary: "İmplant fiyatı sordu, randevu istedi",
+    intent: "randevu_talebi",
+    createdAt: "2025-03-01T09:15:00.000Z",
+  });
+}
+
+async function loadFromSupabase(): Promise<void> {
+  const client = getSupabaseClient();
+
+  if (!client) {
+    return;
+  }
+
+  try {
+    const [customerRes, leadRes, conversationRes] = await Promise.all([
+      client.from("customers").select("*").eq("user_id", USER_ID),
+      client.from("leads").select("*").eq("user_id", USER_ID),
+      client.from("conversations").select("*").eq("user_id", USER_ID),
+    ]);
+
+    if (customerRes.error) {
+      logHermesSupabaseInsert("customers", "loadFromSupabase", customerRes.error);
+    } else if (customerRes.data) {
+      const remote = customerRes.data.map((row) =>
+        mapCustomerRow(row as Record<string, unknown>)
+      );
+      const merged = mergeById(customers, remote);
+      customers.length = 0;
+      customers.push(...merged);
+    }
+
+    if (leadRes.error) {
+      logHermesSupabaseInsert("leads", "loadFromSupabase", leadRes.error);
+    } else if (leadRes.data) {
+      const remote = leadRes.data.map((row) =>
+        mapLeadRow(row as Record<string, unknown>)
+      );
+      const merged = mergeById(leads, remote);
+      leads.length = 0;
+      leads.push(...merged);
+    }
+
+    if (conversationRes.error) {
+      logHermesSupabaseInsert(
+        "conversations",
+        "loadFromSupabase",
+        conversationRes.error
+      );
+    } else if (conversationRes.data) {
+      const remote = conversationRes.data.map((row) =>
+        mapConversationRow(row as Record<string, unknown>)
+      );
+      const merged = mergeById(conversations, remote);
+      conversations.length = 0;
+      conversations.push(...merged);
+    }
+  } catch (error) {
+    console.error("[hermes][leads] loadFromSupabase failed", {
+      detail: describeSupabaseError(error),
+    });
+  }
+}
+
+export async function ensureLeadDataLoaded(): Promise<void> {
+  if (!hydrationPromise) {
+    hydrationPromise = (async () => {
+      seedLeadMemory();
+      await loadFromSupabase();
+    })();
+  }
+
+  await hydrationPromise;
+}
+
+async function persistCustomer(
+  customer: CustomerRecord
+): Promise<{ ok: boolean; detail?: string }> {
+  rememberCustomerLocally(customer);
+
+  const client = getSupabaseClient();
+
+  if (!client) {
+    return { ok: false, detail: "Supabase yapılandırılmamış" };
+  }
+
+  try {
+    const { error } = await client.from("customers").upsert({
+      id: customer.id,
+      user_id: USER_ID,
+      business_id: customer.businessId,
+      name: customer.name,
+      phone: customer.phone,
+      source: customer.source,
+      notes: customer.notes,
+      created_at: customer.createdAt,
+    });
+
+    if (error) {
+      logHermesSupabaseInsert("customers", "persistCustomer", error);
+      return { ok: false, detail: describeSupabaseError(error) };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error("[hermes][leads] persistCustomer failed", {
+      detail: describeSupabaseError(error),
+    });
+    return { ok: false, detail: describeSupabaseError(error) };
+  }
+}
+
+async function persistLead(
+  lead: LeadRecord
+): Promise<{ ok: boolean; detail?: string }> {
+  rememberLeadLocally(lead);
+
+  const client = getSupabaseClient();
+
+  if (!client) {
+    return { ok: false, detail: "Supabase yapılandırılmamış" };
+  }
+
+  try {
+    const { error } = await client.from("leads").upsert({
+      id: lead.id,
+      user_id: USER_ID,
+      business_id: lead.businessId,
+      customer_id: lead.customerId,
+      interest: lead.interest,
+      status: lead.status,
+      priority: lead.priority,
+      last_message: lead.lastMessage,
+      follow_up_needed: lead.followUpNeeded,
+      created_at: lead.createdAt,
+    });
+
+    if (error) {
+      logHermesSupabaseInsert("leads", "persistLead", error);
+      return { ok: false, detail: describeSupabaseError(error) };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error("[hermes][leads] persistLead failed", {
+      detail: describeSupabaseError(error),
+    });
+    return { ok: false, detail: describeSupabaseError(error) };
+  }
+}
+
+async function persistConversation(
+  conversation: ConversationRecord
+): Promise<{ ok: boolean; detail?: string }> {
+  rememberConversationLocally(conversation);
+
+  const client = getSupabaseClient();
+
+  if (!client) {
+    return { ok: false, detail: "Supabase yapılandırılmamış" };
+  }
+
+  try {
+    const { error } = await client.from("conversations").upsert({
+      id: conversation.id,
+      user_id: USER_ID,
+      business_id: conversation.businessId,
+      customer_id: conversation.customerId,
+      channel: conversation.channel,
+      messages: conversation.messages,
+      summary: conversation.summary,
+      intent: conversation.intent,
+      created_at: conversation.createdAt,
+    });
+
+    if (error) {
+      logHermesSupabaseInsert("conversations", "persistConversation", error);
+      return { ok: false, detail: describeSupabaseError(error) };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error("[hermes][leads] persistConversation failed", {
+      detail: describeSupabaseError(error),
+    });
+    return { ok: false, detail: describeSupabaseError(error) };
+  }
 }
 
 function resolveBusinessId(businessIdOrName: string): string | null {
@@ -95,13 +498,15 @@ function filterByBusiness<T extends { businessId: string }>(
   return items.filter((item) => item.businessId === businessId);
 }
 
-export function createCustomer(input: {
+export async function createCustomer(input: {
   businessId: string;
   name: string;
   phone?: string;
   source?: string;
   notes?: string;
-}): LeadMemoryResult {
+}): Promise<LeadMemoryResult> {
+  await ensureLeadDataLoaded();
+
   const businessCheck = assertBusiness(input.businessId);
 
   if (typeof businessCheck !== "string") {
@@ -118,9 +523,7 @@ export function createCustomer(input: {
     (item) =>
       item.businessId === businessCheck &&
       item.name.toLowerCase() === name.toLowerCase() &&
-      (input.phone?.trim()
-        ? item.phone === input.phone.trim()
-        : true)
+      (input.phone?.trim() ? item.phone === input.phone.trim() : true)
   );
 
   if (existing) {
@@ -140,15 +543,21 @@ export function createCustomer(input: {
     createdAt: new Date().toISOString(),
   };
 
-  customers.push(customer);
+  const persisted = await persistCustomer(customer);
 
-  return {
-    success: true,
-    message: `Müşteri kaydedildi: **${customer.name}** (\`${customer.id}\`).`,
-  };
+  const baseMessage = `Müşteri kaydedildi: **${customer.name}** (\`${customer.id}\`).`;
+
+  if (!persisted.ok && persisted.detail) {
+    return {
+      success: true,
+      message: formatHermesInsertFallbackMessage(baseMessage, persisted.detail),
+    };
+  }
+
+  return { success: true, message: baseMessage };
 }
 
-export function createLead(input: {
+export async function createLead(input: {
   businessId: string;
   customerId: string;
   interest: string;
@@ -156,7 +565,9 @@ export function createLead(input: {
   priority?: LeadPriority;
   lastMessage?: string;
   followUpNeeded?: boolean;
-}): LeadMemoryResult {
+}): Promise<LeadMemoryResult> {
+  await ensureLeadDataLoaded();
+
   const businessCheck = assertBusiness(input.businessId);
 
   if (typeof businessCheck !== "string") {
@@ -192,22 +603,29 @@ export function createLead(input: {
     createdAt: new Date().toISOString(),
   };
 
-  leads.push(lead);
+  const persisted = await persistLead(lead);
+  const baseMessage = `Lead kaydedildi: **${customer.name}** — ${interest} (\`${lead.id}\`).`;
 
-  return {
-    success: true,
-    message: `Lead kaydedildi: **${customer.name}** — ${interest} (\`${lead.id}\`).`,
-  };
+  if (!persisted.ok && persisted.detail) {
+    return {
+      success: true,
+      message: formatHermesInsertFallbackMessage(baseMessage, persisted.detail),
+    };
+  }
+
+  return { success: true, message: baseMessage };
 }
 
-export function createConversation(input: {
+export async function createConversation(input: {
   businessId: string;
   customerId: string;
   channel: string;
   messages: ConversationMessage[];
   summary?: string;
   intent?: string;
-}): LeadMemoryResult {
+}): Promise<LeadMemoryResult> {
+  await ensureLeadDataLoaded();
+
   const businessCheck = assertBusiness(input.businessId);
 
   if (typeof businessCheck !== "string") {
@@ -251,17 +669,23 @@ export function createConversation(input: {
     createdAt: new Date().toISOString(),
   };
 
-  conversations.push(conversation);
+  const persisted = await persistConversation(conversation);
+  const extraction = await extractLeadFromConversation(conversation.id);
 
-  const extraction = extractLeadFromConversation(conversation.id);
+  let message = `Konuşma kaydedildi (\`${conversation.id}\`, ${customer.name}).\n\n${extraction.message}`;
 
-  return {
-    success: true,
-    message: `Konuşma kaydedildi (\`${conversation.id}\`, ${customer.name}).\n\n${extraction.message}`,
-  };
+  if (!persisted.ok && persisted.detail) {
+    message = formatHermesInsertFallbackMessage(message, persisted.detail);
+  }
+
+  return { success: true, message };
 }
 
-export function listCustomers(businessIdOrName?: string): CustomerRecord[] {
+export async function listCustomers(
+  businessIdOrName?: string
+): Promise<CustomerRecord[]> {
+  await ensureLeadDataLoaded();
+
   if (!businessIdOrName) {
     return [...customers].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
@@ -277,7 +701,9 @@ export function listCustomers(businessIdOrName?: string): CustomerRecord[] {
   );
 }
 
-export function listLeads(businessIdOrName?: string): LeadRecord[] {
+export async function listLeads(businessIdOrName?: string): Promise<LeadRecord[]> {
+  await ensureLeadDataLoaded();
+
   if (!businessIdOrName) {
     return [...leads].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
@@ -293,7 +719,11 @@ export function listLeads(businessIdOrName?: string): LeadRecord[] {
   );
 }
 
-export function listConversations(businessIdOrName?: string): ConversationRecord[] {
+export async function listConversations(
+  businessIdOrName?: string
+): Promise<ConversationRecord[]> {
+  await ensureLeadDataLoaded();
+
   if (!businessIdOrName) {
     return [...conversations].sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt)
@@ -323,14 +753,16 @@ function getBusinessLabel(businessId: string): string {
   return getBusinessInstance(businessId)?.businessName ?? businessId;
 }
 
-export function summarizeBusinessLeads(businessIdOrName: string): LeadMemoryResult {
+export async function summarizeBusinessLeads(
+  businessIdOrName: string
+): Promise<LeadMemoryResult> {
   const businessCheck = assertBusiness(businessIdOrName);
 
   if (typeof businessCheck !== "string") {
     return businessCheck;
   }
 
-  const businessLeads = listLeads(businessCheck);
+  const businessLeads = await listLeads(businessCheck);
   const label = getBusinessLabel(businessCheck);
 
   if (businessLeads.length === 0) {
@@ -376,16 +808,16 @@ ${lines.join("\n\n")}`,
   };
 }
 
-export function summarizeBusinessConversations(
+export async function summarizeBusinessConversations(
   businessIdOrName: string
-): LeadMemoryResult {
+): Promise<LeadMemoryResult> {
   const businessCheck = assertBusiness(businessIdOrName);
 
   if (typeof businessCheck !== "string") {
     return businessCheck;
   }
 
-  const businessConversations = listConversations(businessCheck);
+  const businessConversations = await listConversations(businessCheck);
   const label = getBusinessLabel(businessCheck);
 
   if (businessConversations.length === 0) {
@@ -449,9 +881,11 @@ function inferPriority(text: string): LeadPriority {
   return "low";
 }
 
-export function extractLeadFromConversation(
+export async function extractLeadFromConversation(
   conversationId: string
-): LeadMemoryResult {
+): Promise<LeadMemoryResult> {
+  await ensureLeadDataLoaded();
+
   const conversation = conversations.find((item) => item.id === conversationId);
 
   if (!conversation) {
@@ -498,10 +932,15 @@ export function extractLeadFromConversation(
     existingLead.followUpNeeded = followUpNeeded;
     existingLead.priority = priority;
 
-    return {
-      success: true,
-      message: `Mevcut lead güncellendi: **${customer.name}** (\`${existingLead.id}\`).`,
-    };
+    const persisted = await persistLead(existingLead);
+
+    let message = `Mevcut lead güncellendi: **${customer.name}** (\`${existingLead.id}\`).`;
+
+    if (!persisted.ok && persisted.detail) {
+      message = formatHermesInsertFallbackMessage(message, persisted.detail);
+    }
+
+    return { success: true, message };
   }
 
   const lead: LeadRecord = {
@@ -516,118 +955,24 @@ export function extractLeadFromConversation(
     createdAt: new Date().toISOString(),
   };
 
-  leads.push(lead);
+  const persisted = await persistLead(lead);
+  let message = `Konuşmadan lead çıkarıldı: **${customer.name}** — ${interest} (\`${lead.id}\`).`;
 
-  return {
-    success: true,
-    message: `Konuşmadan lead çıkarıldı: **${customer.name}** — ${interest} (\`${lead.id}\`).`,
-  };
+  if (!persisted.ok && persisted.detail) {
+    message = formatHermesInsertFallbackMessage(message, persisted.detail);
+  }
+
+  return { success: true, message };
 }
 
-function seedLeadMemory() {
-  const novaId = "biz-klinik-nova";
-  const whiteId = "biz-whitesmile";
+async function summarizeAllLeads(): Promise<string> {
+  const allLeads = await listLeads();
 
-  const novaCust1: CustomerRecord = {
-    id: "cust-nova-ahmet",
-    businessId: novaId,
-    name: "Ahmet Yılmaz",
-    phone: "+90 532 000 11 22",
-    source: "WhatsApp",
-    notes: "İmplant fiyatı sordu",
-    createdAt: "2025-03-01T09:00:00.000Z",
-  };
-
-  const novaCust2: CustomerRecord = {
-    id: "cust-nova-elif",
-    businessId: novaId,
-    name: "Elif Kaya",
-    phone: "+90 533 000 33 44",
-    source: "Web formu",
-    notes: "Diş taşı temizliği",
-    createdAt: "2025-03-02T11:00:00.000Z",
-  };
-
-  const whiteCust1: CustomerRecord = {
-    id: "cust-white-selin",
-    businessId: whiteId,
-    name: "Selin Demir",
-    phone: "+90 534 000 55 66",
-    source: "Instagram DM",
-    notes: "Beyazlatma kampanyası",
-    createdAt: "2025-03-03T14:00:00.000Z",
-  };
-
-  customers.push(novaCust1, novaCust2, whiteCust1);
-
-  leads.push(
-    {
-      id: "lead-nova-ahmet-implant",
-      businessId: novaId,
-      customerId: novaCust1.id,
-      interest: "İmplant fiyatı ve randevu",
-      status: "contacted",
-      priority: "high",
-      lastMessage: "İmplant fiyatı nedir, bu hafta müsait misiniz?",
-      followUpNeeded: true,
-      createdAt: "2025-03-01T09:15:00.000Z",
-    },
-    {
-      id: "lead-nova-elif-cleaning",
-      businessId: novaId,
-      customerId: novaCust2.id,
-      interest: "Diş taşı temizliği randevusu",
-      status: "new",
-      priority: "medium",
-      lastMessage: "Cumartesi öğleden sonra uygun mu?",
-      followUpNeeded: true,
-      createdAt: "2025-03-02T11:30:00.000Z",
-    },
-    {
-      id: "lead-white-selin-whiten",
-      businessId: whiteId,
-      customerId: whiteCust1.id,
-      interest: "Diş beyazlatma kampanyası",
-      status: "qualified",
-      priority: "medium",
-      lastMessage: "Kampanya fiyatını öğrenmek istiyorum",
-      followUpNeeded: false,
-      createdAt: "2025-03-03T14:20:00.000Z",
-    }
-  );
-
-  conversations.push({
-    id: "conv-nova-ahmet-1",
-    businessId: novaId,
-    customerId: novaCust1.id,
-    channel: "WhatsApp",
-    messages: [
-      {
-        role: "customer",
-        content: "Merhaba, implant fiyatı nedir?",
-        at: "2025-03-01T09:10:00.000Z",
-      },
-      {
-        role: "assistant",
-        content:
-          "Merhaba, ön görüşme randevusu ile başlıyoruz. Uygun gününüzü paylaşır mısınız?",
-        at: "2025-03-01T09:12:00.000Z",
-      },
-    ],
-    summary: "İmplant fiyatı sordu, randevu istedi",
-    intent: "randevu_talebi",
-    createdAt: "2025-03-01T09:15:00.000Z",
-  });
-}
-
-seedLeadMemory();
-
-function summarizeAllLeads(): string {
-  if (leads.length === 0) {
+  if (allLeads.length === 0) {
     return `## Tüm Leadler\n\n${LEAD_BOUNDARY}\n\nKayıtlı lead yok.`;
   }
 
-  const lines = leads.map((lead, index) => {
+  const lines = allLeads.map((lead, index) => {
     const business = getBusinessLabel(lead.businessId);
     const name = getCustomerName(lead.customerId, lead.businessId);
 
@@ -641,12 +986,14 @@ ${LEAD_BOUNDARY}
 ${lines.join("\n")}`;
 }
 
-function summarizeAllCustomers(): string {
-  if (customers.length === 0) {
+async function summarizeAllCustomers(): Promise<string> {
+  const allCustomers = await listCustomers();
+
+  if (allCustomers.length === 0) {
     return `## Müşteri Kayıtları\n\nKayıt yok.`;
   }
 
-  const lines = customers.map((customer, index) => {
+  const lines = allCustomers.map((customer, index) => {
     const business = getBusinessLabel(customer.businessId);
 
     return `${index + 1}. **${customer.name}** — ${business} (${customer.source}) ${customer.phone || ""}`;
@@ -659,7 +1006,9 @@ ${LEAD_BOUNDARY}
 ${lines.join("\n")}`;
 }
 
-function saveConversationFromCommand(payload: string): LeadMemoryResult {
+async function saveConversationFromCommand(
+  payload: string
+): Promise<LeadMemoryResult> {
   const parts = payload.split("|").map((part) => part.trim());
 
   if (parts.length < 3) {
@@ -679,13 +1028,14 @@ function saveConversationFromCommand(payload: string): LeadMemoryResult {
     return businessCheck;
   }
 
-  createCustomer({
+  await createCustomer({
     businessId: businessCheck,
     name: customerName,
     source: "konuşma_kaydı",
   });
 
-  const customer = listCustomers(businessCheck).find(
+  const customerList = await listCustomers(businessCheck);
+  const customer = customerList.find(
     (item) => item.name.toLowerCase() === customerName.toLowerCase()
   );
 
@@ -721,7 +1071,7 @@ export async function handleLeadRouterCommand(
     lower === "leadleri goster" ||
     lower.includes("leadleri göster")
   ) {
-    return { success: true, message: summarizeAllLeads() };
+    return { success: true, message: await summarizeAllLeads() };
   }
 
   if (
@@ -736,7 +1086,7 @@ export async function handleLeadRouterCommand(
     lower.includes("musteri kayitlari") ||
     lower.includes("müşteri kayitlari")
   ) {
-    return { success: true, message: summarizeAllCustomers() };
+    return { success: true, message: await summarizeAllCustomers() };
   }
 
   if (
@@ -747,8 +1097,10 @@ export async function handleLeadRouterCommand(
   }
 
   if (lower.startsWith("lead özeti:") || lower.startsWith("lead ozeti:")) {
-    const target =
-      message.replace(/^lead\s+özeti\s*:\s*/i, "").replace(/^lead\s+ozeti\s*:\s*/i, "").trim();
+    const target = message
+      .replace(/^lead\s+özeti\s*:\s*/i, "")
+      .replace(/^lead\s+ozeti\s*:\s*/i, "")
+      .trim();
 
     if (!target) {
       return {
