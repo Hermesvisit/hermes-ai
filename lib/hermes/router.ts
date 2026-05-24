@@ -69,6 +69,8 @@ import {
   selectBusinessForRequest,
 } from "@/lib/hermes/business-instances";
 
+import { handleLeadRouterCommand } from "@/lib/hermes/leads";
+
 import OpenAI from "openai";
 
 function getOpenAIClient() {
@@ -244,6 +246,15 @@ export async function handleHermesMessage(params: {
     return {
       success: businessCmd.success,
       message: businessCmd.message,
+    };
+  }
+
+  const leadCmd = await handleLeadRouterCommand(message);
+
+  if (leadCmd) {
+    return {
+      success: leadCmd.success,
+      message: leadCmd.message,
     };
   }
 

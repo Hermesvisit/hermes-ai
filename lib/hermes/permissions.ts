@@ -192,6 +192,7 @@ export function explainPermissionLimits(): string {
 | Research Memory | açık | Araştırma geçmişi, karşılaştırma, otomatik pazar kaydı |
 | Sector Registry | açık | DentalOS, EstateOS, BeautyOS, RestaurantOS (Hermes Core altı) |
 | Business Instances | açık | Sektör başına izole işletme bağlamı (Klinik Nova, vb.) |
+| Lead & Conversation Memory | açık | İşletme bazlı lead, müşteri ve konuşma kaydı (yerel) |
 
 ### Bilinçli olarak kapalı
 - **Dosya yazma** — kapalı (LEVEL_5; otomatik düzenleme / patch uygulama yok)
@@ -246,6 +247,12 @@ Hermes dosyalara doğrudan yazmaz; plan ve analiz üretir, değişiklikleri sen 
 - \`işletmeleri göster\` · \`dentalos işletmeleri\`
 - \`klinik nova nedir\` · \`hangi işletme hangi sektörde\`
 - \`işletme analizi: Klinik Nova\`
+
+**Lead & Conversation Memory**
+- \`leadleri göster\` · \`klinik nova leadleri\`
+- \`müşteri kayıtları\` · \`klinik nova konuşmaları\`
+- \`lead özeti: Klinik Nova\`
+- \`konuşma kaydet: Klinik Nova | Ahmet | …\`
 
 Pazar komutları başarılı olduğunda özetler Research Memory'ye otomatik kaydedilir.`;
 }
