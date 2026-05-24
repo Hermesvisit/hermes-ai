@@ -11,6 +11,10 @@ import {
 } from "@/lib/hermes/permissions";
 import { getBusinessContextPrompt } from "@/lib/hermes/business";
 import {
+  getSectorContextPrompt,
+  selectBestSectorForRequest,
+} from "@/lib/hermes/sectors";
+import {
   formatPlannerAgentHeader,
   getAgentContextPrompt,
   resolveAgentForMessage,
@@ -112,8 +116,14 @@ async function loadFileContexts(
   };
 }
 
-function withPlannerContext(system: string, agent: HermesAgent): string {
-  return `${system}\n\n${getBusinessContextPrompt()}\n\n${getAgentContextPrompt(agent)}\n\n${getPermissionBoundariesForPrompt()}`;
+function withPlannerContext(
+  system: string,
+  agent: HermesAgent,
+  request: string
+): string {
+  const sector = selectBestSectorForRequest(request);
+
+  return `${system}\n\n${getBusinessContextPrompt()}\n\n${getSectorContextPrompt(sector)}\n\n${getAgentContextPrompt(agent)}\n\n${getPermissionBoundariesForPrompt()}`;
 }
 
 function getPlannerAgent(request: string): HermesAgent {
@@ -149,7 +159,10 @@ async function runOpenAIAnalysis(params: {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: withPlannerContext(params.system, params.agent) },
+        {
+          role: "system",
+          content: withPlannerContext(params.system, params.agent, params.user),
+        },
         { role: "user", content: params.user },
       ],
     });

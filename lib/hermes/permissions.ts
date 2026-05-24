@@ -190,6 +190,7 @@ export function explainPermissionLimits(): string {
 | Agent Registry | açık | CEO/CTO/Research/Marketing/Sales/UX agent seçimi |
 | Market Intelligence | açık | Pazar analizi, fırsat skoru, rakip planı, fikir değerlendirme |
 | Research Memory | açık | Araştırma geçmişi, karşılaştırma, otomatik pazar kaydı |
+| Sector Registry | açık | DentalOS, EstateOS, BeautyOS, RestaurantOS (Hermes Core altı) |
 
 ### Bilinçli olarak kapalı
 - **Dosya yazma** — kapalı (LEVEL_5; otomatik düzenleme / patch uygulama yok)
@@ -234,6 +235,11 @@ Hermes dosyalara doğrudan yazmaz; plan ve analiz üretir, değişiklikleri sen 
 - \`araştırma hafızası\` · \`geçmiş fırsatlar\`
 - \`son araştırmalar\` · \`eski analizleri göster\`
 - \`hangi fikir daha mantıklı: …\`
+
+**Sector Registry** (iç kullanım — müşteriye Hermes Core açılmaz)
+- \`sektörleri göster\` · \`dentalos nedir\` · \`emlakos nedir\`
+- \`hangi sektörden başlamalıyız\`
+- \`sektör analizi: DENTAL_OS\`
 
 Pazar komutları başarılı olduğunda özetler Research Memory'ye otomatik kaydedilir.`;
 }

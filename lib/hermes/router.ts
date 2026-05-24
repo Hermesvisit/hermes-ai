@@ -57,6 +57,12 @@ import {
   getResearchContext,
 } from "@/lib/hermes/research-memory";
 
+import {
+  handleSectorRouterCommand,
+  getSectorContextPrompt,
+  selectBestSectorForRequest,
+} from "@/lib/hermes/sectors";
+
 import OpenAI from "openai";
 
 function getOpenAIClient() {
@@ -214,6 +220,15 @@ export async function handleHermesMessage(params: {
     return {
       success: true,
       message: recommendAgentForTask(task),
+    };
+  }
+
+  const sectorCmd = await handleSectorRouterCommand(message);
+
+  if (sectorCmd) {
+    return {
+      success: sectorCmd.success,
+      message: sectorCmd.message,
     };
   }
 
@@ -495,10 +510,13 @@ export async function handleHermesMessage(params: {
 
   const memoryContext = await getMemoryContext();
   const researchContext = await getResearchContext();
+  const sector = selectBestSectorForRequest(message);
+  const sectorContext = getSectorContextPrompt(sector);
 
   const systemPrompt = buildSystemPrompt({
     memoryContext,
     researchContext,
+    sectorContext,
     persona,
     mode,
     agent,

@@ -1,5 +1,6 @@
 import { getBusinessContextPrompt } from "@/lib/hermes/business";
 import { getAgentContextPrompt, type HermesAgent } from "@/lib/hermes/agents";
+import { getSectorContextPrompt } from "@/lib/hermes/sectors";
 
 export type HermesPersona = "Normal" | "CEO" | "Analist" | "CodeAgent";
 export type HermesMode = "Fast" | "Deep" | "Research";
@@ -81,11 +82,13 @@ export function detectMode(message: string, selectedMode: string): HermesMode {
 export function buildSystemPrompt(params: {
   memoryContext: string;
   researchContext: string;
+  sectorContext?: string;
   persona: HermesPersona;
   mode: HermesMode;
   agent: HermesAgent;
 }) {
-  const { memoryContext, researchContext, persona, mode, agent } = params;
+  const { memoryContext, researchContext, sectorContext, persona, mode, agent } =
+    params;
 
   const personaPrompts: Record<HermesPersona, string> = {
     Normal:
@@ -117,6 +120,8 @@ ${memoryContext}
 ${getBusinessContextPrompt()}
 
 ${getAgentContextPrompt(agent)}
+
+${sectorContext ?? getSectorContextPrompt()}
 
 ${researchContext}
 
