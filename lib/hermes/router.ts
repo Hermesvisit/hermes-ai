@@ -63,6 +63,12 @@ import {
   selectBestSectorForRequest,
 } from "@/lib/hermes/sectors";
 
+import {
+  handleBusinessInstanceRouterCommand,
+  getBusinessContextPrompt as getBusinessInstanceContextPrompt,
+  selectBusinessForRequest,
+} from "@/lib/hermes/business-instances";
+
 import OpenAI from "openai";
 
 function getOpenAIClient() {
@@ -229,6 +235,15 @@ export async function handleHermesMessage(params: {
     return {
       success: sectorCmd.success,
       message: sectorCmd.message,
+    };
+  }
+
+  const businessCmd = await handleBusinessInstanceRouterCommand(message);
+
+  if (businessCmd) {
+    return {
+      success: businessCmd.success,
+      message: businessCmd.message,
     };
   }
 
@@ -512,11 +527,16 @@ export async function handleHermesMessage(params: {
   const researchContext = await getResearchContext();
   const sector = selectBestSectorForRequest(message);
   const sectorContext = getSectorContextPrompt(sector);
+  const businessInstance = selectBusinessForRequest(message, sector.id);
+  const businessInstanceContext = getBusinessInstanceContextPrompt(
+    businessInstance
+  );
 
   const systemPrompt = buildSystemPrompt({
     memoryContext,
     researchContext,
     sectorContext,
+    businessInstanceContext,
     persona,
     mode,
     agent,

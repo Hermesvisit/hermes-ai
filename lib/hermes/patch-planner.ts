@@ -11,6 +11,10 @@ import {
 } from "@/lib/hermes/permissions";
 import { getBusinessContextPrompt } from "@/lib/hermes/business";
 import {
+  getBusinessContextPrompt as getBusinessInstanceContextPrompt,
+  selectBusinessForRequest,
+} from "@/lib/hermes/business-instances";
+import {
   getSectorContextPrompt,
   selectBestSectorForRequest,
 } from "@/lib/hermes/sectors";
@@ -122,8 +126,10 @@ function withPlannerContext(
   request: string
 ): string {
   const sector = selectBestSectorForRequest(request);
+  const businessInstance = selectBusinessForRequest(request, sector.id);
+  const instanceContext = getBusinessInstanceContextPrompt(businessInstance);
 
-  return `${system}\n\n${getBusinessContextPrompt()}\n\n${getSectorContextPrompt(sector)}\n\n${getAgentContextPrompt(agent)}\n\n${getPermissionBoundariesForPrompt()}`;
+  return `${system}\n\n${getBusinessContextPrompt()}\n\n${getSectorContextPrompt(sector)}\n\n${instanceContext}\n\n${getAgentContextPrompt(agent)}\n\n${getPermissionBoundariesForPrompt()}`;
 }
 
 function getPlannerAgent(request: string): HermesAgent {

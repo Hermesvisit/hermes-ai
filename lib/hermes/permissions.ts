@@ -191,6 +191,7 @@ export function explainPermissionLimits(): string {
 | Market Intelligence | açık | Pazar analizi, fırsat skoru, rakip planı, fikir değerlendirme |
 | Research Memory | açık | Araştırma geçmişi, karşılaştırma, otomatik pazar kaydı |
 | Sector Registry | açık | DentalOS, EstateOS, BeautyOS, RestaurantOS (Hermes Core altı) |
+| Business Instances | açık | Sektör başına izole işletme bağlamı (Klinik Nova, vb.) |
 
 ### Bilinçli olarak kapalı
 - **Dosya yazma** — kapalı (LEVEL_5; otomatik düzenleme / patch uygulama yok)
@@ -240,6 +241,11 @@ Hermes dosyalara doğrudan yazmaz; plan ve analiz üretir, değişiklikleri sen 
 - \`sektörleri göster\` · \`dentalos nedir\` · \`emlakos nedir\`
 - \`hangi sektörden başlamalıyız\`
 - \`sektör analizi: DENTAL_OS\`
+
+**Business Instances** (izole işletme bağlamı)
+- \`işletmeleri göster\` · \`dentalos işletmeleri\`
+- \`klinik nova nedir\` · \`hangi işletme hangi sektörde\`
+- \`işletme analizi: Klinik Nova\`
 
 Pazar komutları başarılı olduğunda özetler Research Memory'ye otomatik kaydedilir.`;
 }
